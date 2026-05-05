@@ -1,0 +1,474 @@
+const { query, TABLE, getClient } = require('../config/database');
+const AppError = require('../utils/AppError');
+
+// ============================================
+// NUEVA FUNCIÓN: Obtener órdenes disponibles para cobrar
+// ============================================
+async function getOrdenesPorCobrar(filtros = {}) {
+    const { mesa_id, estado } = filtros;
+
+    const conditions = [
+        'o.activo = TRUE',
+        "o.estado IN ('abierta', 'enviada_cocina', 'preparando', 'lista')",
+        'o.id NOT IN (SELECT orden_id FROM pos.ventas WHERE activo = TRUE)'
+    ];
+    const params = [];
+    let paramIndex = 1;
+
+    if (mesa_id) {
+        conditions.push(`o.mesa_id = $${paramIndex}`);
+        params.push(mesa_id);
+        paramIndex++;
+    }
+
+    if (estado && ['abierta', 'enviada_cocina', 'preparando', 'lista'].includes(estado)) {
+        conditions.push(`o.estado = $${paramIndex}`);
+        params.push(estado);
+        paramIndex++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const result = await query(
+        `SELECT o.*,
+            COALESCE(m.numero::text, 'Para Llevar') AS mesa_numero,
+            u.nombre AS mesero_nombre,
+            (SELECT COUNT(*) FROM ${TABLE.ORDEN_DETALLES} od 
+             WHERE od.orden_id = o.id AND od.activo = TRUE) AS total_items,
+            COALESCE((SELECT SUM(od.subtotal) FROM ${TABLE.ORDEN_DETALLES} od 
+             WHERE od.orden_id = o.id AND od.activo = TRUE AND od.es_incluido_menu = FALSE), 0) AS subtotal
+     FROM ${TABLE.ORDENES} o
+     LEFT JOIN ${TABLE.MESAS} m ON m.id = o.mesa_id
+     JOIN ${TABLE.USUARIOS} u ON u.id = o.mesero_id
+     WHERE ${whereClause}
+     ORDER BY o.created_at DESC`,
+        params
+    );
+
+    return result.rows;
+}
+
+async function getAllVentas(filtros = {}) {
+    const { fecha_desde, fecha_hasta, cajero_id, metodo_pago, activo } = filtros;
+
+    // Eliminamos la restricción estricta de TRUE para poder ver las anuladas en rojo
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    // Solo filtramos por activo si el frontend lo pide explícitamente
+    if (activo !== undefined) {
+        conditions.push(`v.activo = $${paramIndex}`);
+        params.push(activo);
+        paramIndex++;
+    } else {
+        conditions.push('1=1'); // Truco SQL de seguridad para el JOIN
+    }
+
+    if (fecha_desde) {
+        conditions.push(`v.created_at >= $${paramIndex}`);
+        params.push(fecha_desde);
+        paramIndex++;
+    }
+
+    if (fecha_hasta) {
+        conditions.push(`v.created_at <= $${paramIndex}`);
+        params.push(fecha_hasta);
+        paramIndex++;
+    }
+
+    if (cajero_id) {
+        conditions.push(`v.cajero_id = $${paramIndex}`);
+        params.push(cajero_id);
+        paramIndex++;
+    }
+
+    if (metodo_pago) {
+        conditions.push(`v.metodo_pago = $${paramIndex}`);
+        params.push(metodo_pago);
+        paramIndex++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const result = await query(
+        `SELECT v.*,
+            o.numero_comanda,
+            COALESCE(m.numero::text, 'Para Llevar') AS mesa_numero,
+            u.nombre AS cajero_nombre
+     FROM ${TABLE.VENTAS} v
+     JOIN ${TABLE.ORDENES} o ON o.id = v.orden_id
+     LEFT JOIN ${TABLE.MESAS} m ON m.id = o.mesa_id
+     JOIN ${TABLE.USUARIOS} u ON u.id = v.cajero_id
+     WHERE ${whereClause}
+     ORDER BY v.created_at DESC`,
+        params
+    );
+
+    return result.rows;
+}
+
+async function getVentaById(id) {
+    const result = await query(
+        `SELECT v.*,
+            o.numero_comanda,
+            COALESCE(m.numero::text, 'Para Llevar') AS mesa_numero,
+            u.nombre AS cajero_nombre
+     FROM ${TABLE.VENTAS} v
+     JOIN ${TABLE.ORDENES} o ON o.id = v.orden_id
+     LEFT JOIN ${TABLE.MESAS} m ON m.id = o.mesa_id
+     JOIN ${TABLE.USUARIOS} u ON u.id = v.cajero_id
+     WHERE v.id = $1 AND v.activo = TRUE`,
+        [id]
+    );
+
+    if (result.rows.length === 0) {
+        throw AppError.notFound('Venta no encontrada');
+    }
+
+    // Obtener detalles de la venta
+    const detalles = await query(
+        `SELECT vd.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo
+     FROM ${TABLE.VENTAS_DETALLE} vd
+     JOIN ${TABLE.PRODUCTOS} p ON p.id = vd.producto_id
+     WHERE vd.venta_id = $1 AND vd.activo = TRUE
+     ORDER BY vd.created_at ASC`,
+        [id]
+    );
+
+    const venta = result.rows[0];
+    return {
+        ...venta,
+        vuelto: parseFloat((venta.monto_pagado - venta.total).toFixed(2)),
+        detalles: detalles.rows,
+    };
+}
+
+async function crearVenta(data, usuario_id) {
+    // 1. AÑADIDO: Extraemos los nuevos campos para el pago mixto
+    const {
+        orden_id,
+        metodo_pago,
+        monto_pagado,
+        descuento = 0,
+        observaciones,
+        monto_efectivo = 0,
+        monto_digital = 0,
+        metodo_digital = 'yape'
+    } = data;
+
+    // Validar que el usuario es cajero o admin
+    const usuario = await query(
+        `SELECT u.id, r.nombre AS rol FROM ${TABLE.USUARIOS} u
+     JOIN ${TABLE.ROLES} r ON r.id = u.rol_id
+     WHERE u.id = $1 AND u.activo = TRUE`,
+        [usuario_id]
+    );
+
+    if (usuario.rows.length === 0) {
+        throw AppError.unauthorized('Usuario no válido');
+    }
+
+    if (!['cajero', 'administrador'].includes(usuario.rows[0].rol)) {
+        throw AppError.forbidden('Solo cajeros pueden crear ventas');
+    }
+
+    // ✅ CORRECCIÓN: LEFT JOIN para incluir órdenes Para Llevar (mesa_id = null)
+    const orden = await query(
+        `SELECT o.*,
+            o.mesa_id,
+            o.descuento_total,
+            COALESCE(m.numero::text, 'Para Llevar') AS mesa_numero
+     FROM ${TABLE.ORDENES} o
+     LEFT JOIN ${TABLE.MESAS} m ON m.id = o.mesa_id
+     WHERE o.id = $1 AND o.activo = TRUE`,
+        [orden_id]
+    );
+
+    if (orden.rows.length === 0) {
+        throw AppError.notFound('Orden no encontrada');
+    }
+
+    // Validar estados permitidos para cobrar
+    if (!['abierta', 'enviada_cocina', 'preparando', 'lista'].includes(orden.rows[0].estado)) {
+        throw AppError.conflict(
+            `No se puede cobrar: orden en estado ${orden.rows[0].estado}. Debe estar en estado válido para cobro.`
+        );
+    }
+
+    // Validar que no exista ya una venta para esta orden
+    const ventaExistente = await query(
+        `SELECT id FROM ${TABLE.VENTAS} WHERE orden_id = $1 AND activo = TRUE`,
+        [orden_id]
+    );
+
+    if (ventaExistente.rows.length > 0) {
+        throw AppError.conflict('Esta orden ya fue cobrada');
+    }
+
+    // Obtener detalles de la orden
+    const detallesOrden = await query(
+        `SELECT od.*, p.nombre AS producto_nombre, p.control_stock, od.es_incluido_menu
+     FROM ${TABLE.ORDEN_DETALLES} od
+     JOIN ${TABLE.PRODUCTOS} p ON p.id = od.producto_id
+     WHERE od.orden_id = $1 AND od.activo = TRUE AND od.es_incluido_menu = FALSE`,
+        [orden_id]
+    );
+
+    if (detallesOrden.rows.length === 0) {
+        throw AppError.badRequest('La orden no tiene productos para cobrar');
+    }
+
+    // Calcular totales
+    let subtotal = 0;
+    detallesOrden.rows.forEach((detalle) => {
+        subtotal += (parseFloat(detalle.precio) * parseInt(detalle.cantidad));
+    });
+
+    // ✅ CAMBIO: Usar descuento_total de la orden si no se paso explícitamente
+    const descuentoFinal = descuento > 0 ? descuento : parseFloat(orden.rows[0].descuento_total || 0);
+    const totalConDescuento = subtotal - descuentoFinal;
+    const subtotal_base = totalConDescuento / 1.18;
+    const igv = totalConDescuento - subtotal_base;
+    const total = totalConDescuento;
+
+    // 2. AÑADIDO: Lógica de validación para Pago Mixto
+    let montoPagadoFinal = parseFloat(monto_pagado);
+
+    if (metodo_pago === 'mixto') {
+        montoPagadoFinal = parseFloat(monto_efectivo) + parseFloat(monto_digital);
+        if (montoPagadoFinal < total) {
+            throw AppError.badRequest(
+                `Monto mixto insuficiente. Total: S/ ${total}, Declarado: S/ ${montoPagadoFinal}`
+            );
+        }
+    } else {
+        if (monto_pagado < total) {
+            throw AppError.badRequest(
+                `Monto pagado insuficiente. Total: S/ ${total}, Pagado: S/ ${monto_pagado}`
+            );
+        }
+    }
+
+    // ==========================================
+    // TRANSACCIÓN ATÓMICA
+    // ==========================================
+    const client = await getClient();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Crear venta (Usamos montoPagadoFinal por si es mixto)
+        const ventaResult = await client.query(
+            `INSERT INTO ${TABLE.VENTAS} 
+       (orden_id, cajero_id, subtotal, igv, descuento, total, metodo_pago, monto_pagado, activo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
+       RETURNING *`,
+            [orden_id, usuario_id, subtotal, igv, descuentoFinal, total, metodo_pago, montoPagadoFinal]
+        );
+
+        const venta = ventaResult.rows[0];
+
+        // 2. Crear detalles de venta
+        for (const detalle of detallesOrden.rows) {
+            await client.query(
+                `INSERT INTO ${TABLE.VENTAS_DETALLE} 
+         (venta_id, producto_id, cantidad, precio, es_incluido_menu, activo)
+         VALUES ($1, $2, $3, $4, $5, TRUE)`,
+                [venta.id, detalle.producto_id, detalle.cantidad, detalle.precio, detalle.es_incluido_menu]
+            );
+        }
+
+        // 3. AÑADIDO: Registrar movimiento(s) en caja según el tipo de pago
+        if (metodo_pago === 'mixto') {
+            // Sub-movimiento 1: Efectivo
+            await client.query(
+                `INSERT INTO ${TABLE.CAJA_MOVIMIENTOS}
+                 (caja_id, tipo, descripcion, monto, venta_id, usuario_id, activo, referencia_tipo)
+                 VALUES (
+                   (SELECT id FROM ${TABLE.CAJA_APERTURAS} WHERE estado = 'abierta' ORDER BY created_at DESC LIMIT 1),
+                   'venta', $1, $2, $3, $4, TRUE, 'efectivo'
+                 )`,
+                [`Venta #${venta.id} (Parte Efectivo)`, monto_efectivo, venta.id, usuario_id]
+            );
+
+            // Sub-movimiento 2: Billetera Digital/Tarjeta
+            await client.query(
+                `INSERT INTO ${TABLE.CAJA_MOVIMIENTOS}
+                 (caja_id, tipo, descripcion, monto, venta_id, usuario_id, activo, referencia_tipo)
+                 VALUES (
+                   (SELECT id FROM ${TABLE.CAJA_APERTURAS} WHERE estado = 'abierta' ORDER BY created_at DESC LIMIT 1),
+                   'venta', $1, $2, $3, $4, TRUE, $5
+                 )`,
+                [`Venta #${venta.id} (Parte ${metodo_digital})`, monto_digital, venta.id, usuario_id, metodo_digital]
+            );
+        } else {
+            // Lógica original intocable (Añadí referencia_tipo para que los reportes no fallen)
+            const descripcionMovimiento = `Venta #${venta.id}`;
+            await client.query(
+                `INSERT INTO ${TABLE.CAJA_MOVIMIENTOS}
+                 (caja_id, tipo, descripcion, monto, venta_id, usuario_id, activo, referencia_tipo)
+                 VALUES (
+                   (SELECT id FROM ${TABLE.CAJA_APERTURAS} WHERE estado = 'abierta' ORDER BY created_at DESC LIMIT 1),
+                   'venta', $1, $2, $3, $4, TRUE, $5
+                 )`,
+                [descripcionMovimiento, total, venta.id, usuario_id, metodo_pago]
+            );
+        }
+
+        // 4. Actualizar orden a estado 'cobrada'
+        await client.query(
+            `UPDATE ${TABLE.ORDENES} 
+       SET estado = 'cobrada', fecha_cierre = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+            [orden_id]
+        );
+
+        // 5. ✅ CORRECCIÓN: Liberar mesa SOLO si la orden tiene mesa asignada
+        if (orden.rows[0].mesa_id) {
+            await client.query(
+                `UPDATE ${TABLE.MESAS} 
+         SET estado = 'libre', updated_at = NOW()
+         WHERE id = $1`,
+                [orden.rows[0].mesa_id]
+            );
+        }
+
+        // 6. Registrar ticket de venta
+        await client.query(
+            `INSERT INTO ${TABLE.TICKETS_COCINA} (orden_id, tipo_ticket, impreso, activo)
+       VALUES ($1, 'venta_cliente', FALSE, TRUE)`,
+            [orden_id]
+        );
+
+        await client.query('COMMIT');
+
+        return await getVentaById(venta.id);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error en transacción de venta:', error.message);
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+async function anularVenta(id, usuario_id, motivo) {
+    // Solo administrador puede anular ventas
+    const usuario = await query(
+        `SELECT u.id, r.nombre AS rol FROM ${TABLE.USUARIOS} u
+     JOIN ${TABLE.ROLES} r ON r.id = u.rol_id
+     WHERE u.id = $1 AND u.activo = TRUE`,
+        [usuario_id]
+    );
+
+    if (usuario.rows.length === 0 || usuario.rows[0].rol !== 'administrador') {
+        throw AppError.forbidden('Solo administradores pueden anular ventas');
+    }
+
+    const client = await getClient();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Marcar venta como inactiva
+        await client.query(
+            `UPDATE ${TABLE.VENTAS} 
+       SET activo = FALSE, updated_at = NOW()
+       WHERE id = $1`,
+            [id]
+        );
+
+        // 2. Marcar detalles como inactivos
+        await client.query(
+            `UPDATE ${TABLE.VENTAS_DETALLE} 
+       SET activo = FALSE
+       WHERE venta_id = $1`,
+            [id]
+        );
+
+        // 3. Revertir orden a estado 'cancelada'
+        await client.query(
+            `UPDATE ${TABLE.ORDENES} 
+       SET estado = 'cancelada', fecha_cierre = NOW(), updated_at = NOW()
+       WHERE id = (SELECT orden_id FROM ${TABLE.VENTAS} WHERE id = $1)`,
+            [id]
+        );
+
+        // 4. Registrar movimiento contrario en caja
+        const venta = await query(
+            `SELECT total, cajero_id FROM ${TABLE.VENTAS} WHERE id = $1`,
+            [id]
+        );
+
+        await client.query(
+            `INSERT INTO ${TABLE.CAJA_MOVIMIENTOS} 
+       (caja_id, tipo, descripcion, monto, usuario_id, activo)
+       VALUES (
+         (SELECT id FROM ${TABLE.CAJA_APERTURAS} WHERE estado = 'abierta' ORDER BY created_at DESC LIMIT 1),
+         'gasto',
+         'Anulación Venta #' || $1 || ' - ' || $2,
+         $3,
+         $4,
+         TRUE
+       )`,
+            [id, motivo || 'Sin motivo', venta.rows[0].total, usuario_id]
+        );
+
+        await client.query('COMMIT');
+
+        return { success: true, message: 'Venta anulada correctamente' };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+async function getTicketData(id) {
+    const venta = await getVentaById(id);
+
+    return {
+        numero_ticket: venta.numero_ticket,
+        fecha: venta.created_at,
+        mesa: venta.mesa_numero,
+        cajero: venta.cajero_nombre,
+        detalles: venta.detalles,
+        subtotal: venta.subtotal,
+        igv: venta.igv,
+        descuento: venta.descuento,
+        total: venta.total,
+        metodo_pago: venta.metodo_pago,
+        monto_pagado: venta.monto_pagado,
+        vuelto: venta.vuelto,
+    };
+}
+
+async function getTopVentas(caja_id, limite = 3) {
+  // Eliminamos el $1 porque no tenemos columna caja_id clara aún
+  const result = await query(
+    `SELECT p.nombre, SUM(vd.cantidad) as total_vendido
+     FROM pos.ventas_detalle vd
+     JOIN inventario.productos p ON p.id = vd.producto_id
+     JOIN pos.ventas v ON v.id = vd.venta_id
+     JOIN pos.ordenes o ON o.id = v.orden_id
+     WHERE v.activo = TRUE 
+       AND vd.activo = TRUE
+     GROUP BY p.id, p.nombre
+     ORDER BY total_vendido DESC
+     LIMIT $1`, // Ahora el límite es $1
+    [limite] // Solo pasamos un parámetro
+  );
+  return result.rows;
+}
+
+module.exports = {
+    getOrdenesPorCobrar,
+    getAllVentas,
+    getVentaById,
+    crearVenta,
+    anularVenta,
+    getTicketData,
+    getTopVentas
+};
