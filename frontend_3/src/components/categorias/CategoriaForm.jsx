@@ -8,6 +8,7 @@ export const CategoriaForm = ({ categoria, onSave, onCancel, isLoading }) => {
     nombre: '',
     descripcion: '',
     color: '#3b82f6',
+    tipo: 'fondo',
   });
   const [errors, setErrors] = useState({});
 
@@ -17,12 +18,14 @@ export const CategoriaForm = ({ categoria, onSave, onCancel, isLoading }) => {
         nombre: categoria.nombre || '',
         descripcion: categoria.descripcion || '',
         color: categoria.color || '#3b82f6',
+        tipo: categoria.tipo || 'fondo',
       });
     } else {
       setFormData({
         nombre: '',
         descripcion: '',
         color: '#3b82f6',
+        tipo: 'fondo',
       });
     }
     setErrors({});
@@ -92,6 +95,25 @@ export const CategoriaForm = ({ categoria, onSave, onCancel, isLoading }) => {
             className="flex-1"
           />
         </div>
+      </div>
+
+      <div>
+        <Label htmlFor="tipo">Tipo de Categoría *</Label>
+        <select
+          id="tipo"
+          value={formData.tipo}
+          onChange={(e) => handleChange('tipo', e.target.value)}
+          className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-sm"
+          required
+        >
+          <option value="fondo">Plato Principal / Bebida (se vende)</option>
+          <option value="entrada">Entrada / Piqueo (se vende)</option>
+          <option value="insumo">Insumo (solo almacén, no se vende)</option>
+        </select>
+        <p className="text-xs text-gray-400 mt-1">
+          Usa «Plato Principal» para Pizzas, Combos, Bebidas, A la Carta.
+          Usa «Entrada» para Piqueos. Usa «Insumo» para ingredientes internos.
+        </p>
       </div>
 
       <div className="flex gap-2 justify-end pt-4">

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Edit, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, Utensils } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { productosService } from '@/services/productos.service';
 import { Button } from '@/components/ui/button';
@@ -27,11 +27,10 @@ export const Carta = () => {
   const { data: productos, isLoading } = useQuery({
     queryKey: ['productos-carta'],
     queryFn: async () => {
-      // Pedimos todos, pero filtramos localmente SOLO los "preparados" 
-      // (Si tu backend soportara el filtro "?tipo=preparado", lo pondríamos ahí para optimizar)
+      // Traemos todos los productos y excluimos solo los insumos de almacén
       const data = await productosService.getAll({ incluir_inactivos: true });
       return data
-        .filter(p => p.tipo === 'preparado') // 👈 FILTRO CLAVE PARA LA CARTA
+        .filter(p => p.tipo !== 'insumo') // Excluir solo insumos de almacén
         .map(p => ({
           ...p,
           precio_venta: parseFloat(p.precio_venta) || 0,
@@ -49,11 +48,6 @@ export const Carta = () => {
   const toggleActivoMutation = useMutation({
     mutationFn: async ({ id, activo }) => await productosService.toggleActivo(id, activo),
     onSuccess: (data) => { queryClient.invalidateQueries(['productos-carta']); toast.success(data.activo ? 'Activado' : 'Desactivado'); },
-  });
-
-  const toggleMenuMutation = useMutation({
-    mutationFn: async ({ id, disponible_en_menu }) => await productosService.toggleDisponibleEnMenu(id, disponible_en_menu),
-    onSuccess: () => { queryClient.invalidateQueries(['productos-carta']); toast.success('Menú actualizado'); },
   });
 
   // Filtros
@@ -83,9 +77,18 @@ export const Carta = () => {
     }
   };
 
+  const getCategoryEmoji = (categoria) => {
+    switch (categoria) {
+      case 'Pizzas': return '🍕';
+      case 'Combos': return '🍗';
+      case 'Piqueos': return '🥟';
+      default: return '🍽️';
+    }
+  };
+
   const stats = {
     total: productos?.length || 0,
-    enMenu: productos?.filter(p => p.disponible_en_menu).length || 0,
+    activos: productos?.filter(p => p.activo).length || 0,
     inactivos: productos?.filter(p => !p.activo).length || 0,
   };
 
@@ -94,9 +97,9 @@ export const Carta = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <Utensils className="h-8 w-8 text-cyan-600" /> Carta y Platos
+            <span className="text-3xl">🍕</span> Carta y Platos
           </h1>
-          <p className="text-gray-500 mt-1">Gestión de platillos preparados y menú del día</p>
+          <p className="text-gray-500 mt-1">Gestión del catálogo de la pizzería</p>
         </div>
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer hover:text-gray-900">
@@ -111,7 +114,7 @@ export const Carta = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card><CardContent className="pt-6"><p className="text-sm text-gray-500">Platos en Carta</p><p className="text-2xl font-bold text-gray-900">{stats.total}</p></CardContent></Card>
-        <Card><CardContent className="pt-6"><p className="text-sm text-gray-500">En Menú del Día</p><p className="text-2xl font-bold text-purple-600">{stats.enMenu}</p></CardContent></Card>
+        <Card><CardContent className="pt-6"><p className="text-sm text-gray-500">Disponibles (Activos)</p><p className="text-2xl font-bold text-cyan-600">{stats.activos}</p></CardContent></Card>
         <Card><CardContent className="pt-6"><p className="text-sm text-gray-500">Platos Inactivos</p><p className="text-2xl font-bold text-red-600">{stats.inactivos}</p></CardContent></Card>
       </div>
 
@@ -136,8 +139,8 @@ export const Carta = () => {
                     <tr>
                       <th className="text-left py-4 px-6 font-semibold text-gray-900">Platillo</th>
                       <th className="text-left py-4 px-6 font-semibold text-gray-900">Categoría</th>
+                      <th className="text-left py-4 px-6 font-semibold text-gray-900">Tipo</th>
                       <th className="text-right py-4 px-6 font-semibold text-gray-900">Precio Lista</th>
-                      <th className="text-center py-4 px-6 font-semibold text-gray-900">Menú del Día</th>
                       <th className="text-center py-4 px-6 font-semibold text-gray-900">Visible</th>
                       <th className="text-center py-4 px-6 font-semibold text-gray-900">Acciones</th>
                     </tr>
@@ -150,8 +153,8 @@ export const Carta = () => {
                             {producto.imagen_url ? (
                               <img src={producto.imagen_url} alt={producto.nombre} className="w-12 h-12 rounded-lg object-cover border border-gray-200 bg-white" />
                             ) : (
-                              <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center border border-gray-200">
-                                <ImageIcon className="h-6 w-6 text-gray-400" />
+                              <div className="w-12 h-12 rounded-lg bg-orange-50 flex items-center justify-center border border-orange-100 text-xl">
+                                {getCategoryEmoji(producto.categoria_nombre)}
                               </div>
                             )}
                             <div>
@@ -163,16 +166,19 @@ export const Carta = () => {
                         <td className="py-4 px-6 text-sm text-gray-700">
                           <Badge variant="outline" className="bg-cyan-50 text-cyan-800 border-cyan-200">{producto.categoria_nombre || '-'}</Badge>
                         </td>
+                        <td className="py-4 px-6 text-sm text-gray-500 capitalize">
+                          {producto.tipo}
+                        </td>
                         <td className="py-4 px-6 text-right font-semibold text-gray-900">
                           S/ {toNumber(producto.precio_venta).toFixed(2)}
                         </td>
                         <td className="py-4 px-6 text-center">
-                          {producto.categoria_nombre === 'Entradas' || producto.categoria_nombre === 'Platos de Fondo' ? (
-                            <input type="checkbox" checked={producto.disponible_en_menu || false} onChange={() => toggleMenuMutation.mutate({ id: producto.id, disponible_en_menu: !producto.disponible_en_menu })} className="rounded cursor-pointer h-4 w-4 text-purple-600 focus:ring-purple-500"/>
-                          ) : (<span className="text-gray-400 text-xs">N/A</span>)}
-                        </td>
-                        <td className="py-4 px-6 text-center">
-                          <input type="checkbox" checked={producto.activo} onChange={() => toggleActivoMutation.mutate({ id: producto.id, activo: !producto.activo })} className="rounded cursor-pointer h-4 w-4 text-cyan-600 focus:ring-cyan-500"/>
+                          <input
+                            type="checkbox"
+                            checked={producto.activo}
+                            onChange={() => toggleActivoMutation.mutate({ id: producto.id, activo: !producto.activo })}
+                            className="rounded cursor-pointer h-4 w-4 text-cyan-600 focus:ring-cyan-500"
+                          />
                         </td>
                         <td className="py-4 px-6 text-center">
                           <div className="flex justify-center gap-2">

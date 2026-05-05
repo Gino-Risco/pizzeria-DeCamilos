@@ -188,7 +188,7 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
   const isProductosActive = productosSubMenu.some(item => location.pathname === item.path);
   const isInventarioActive = inventarioSubMenu.some(item => location.pathname === item.path);
 
-return (
+  return (
     <aside
       className={cn(
         "fixed left-0 top-0 z-40 h-screen w-64 bg-slate-800 border-r border-slate-700 transition-transform duration-300 ease-in-out lg:translate-x-0",
@@ -202,14 +202,14 @@ return (
             <span className="text-white font-bold text-lg">POS</span>
           </div>
           <div>
-            <h1 className="text-white font-bold text-sm leading-tight">Entre gustos y sabores</h1>
+            <h1 className="text-white font-bold text-sm leading-tight">D' Camilos</h1>
             <p className="text-xs text-slate-400 font-medium">v1.0.1</p>
           </div>
         </div>
 
         {/* Navigation Section */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
-          
+
           {/* --- 1. RENDER MENÚ TOP --- */}
           {mainMenuTop.map((item) => {
             if (!canAccessMenu(item.roles)) return null;

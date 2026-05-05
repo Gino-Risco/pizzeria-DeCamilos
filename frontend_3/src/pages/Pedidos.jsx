@@ -5,6 +5,7 @@ import { Plus, Trash2, Send, ChefHat, Clock, DollarSign, ArrowLeft, Receipt, Pri
 import Swal from 'sweetalert2';
 import { ordenesService } from '@/services/ordenes.service';
 import { productosService } from '@/services/productos.service';
+import { categoriasService } from '@/services/categorias.service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,13 +31,11 @@ export const Pedidos = () => {
   const [selectedProductos, setSelectedProductos] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategoria, setFilterCategoria] = useState('todos');
-  const [showMenuModal, setShowMenuModal] = useState(false);
-  const [menuSeleccion, setMenuSeleccion] = useState({ entrada: null, fondo: null });
+  const [pizzaSeleccionada, setPizzaSeleccionada] = useState(null);
   const [observaciones, setObservaciones] = useState({});
 
   useEffect(() => {
     setSelectedProductos([]);
-    setMenuSeleccion({ entrada: null, fondo: null });
   }, [ordenId]);
 
   const { data: orden, isLoading: ordenLoading, refetch: refetchOrden } = useQuery({
@@ -69,16 +68,40 @@ export const Pedidos = () => {
     },
   });
 
-  const { data: productosMenu } = useQuery({
-    queryKey: ['productos-menu'],
-    queryFn: async () => {
-      const data = await ordenesService.getProductosParaMenu();
-      return data.map(p => ({
-        ...p,
-        precio_venta: parseFloat(p.precio_venta) || 0,
-      }));
-    },
+  const { data: categoriasDB } = useQuery({
+    queryKey: ['categorias'],
+    queryFn: async () => await categoriasService.getAll(),
   });
+
+  // Emojis por nombre de categoría (se puede ampliar libremente)
+  const getCategoriaEmoji = (nombre) => {
+    const nombreLower = nombre.toLowerCase();
+    if (nombreLower.includes('pizza')) return '🍕';
+    if (nombreLower.includes('combo')) return '🍗';
+    if (nombreLower.includes('carta') || nombreLower.includes('plato')) return '🍽️';
+    if (nombreLower.includes('piqueo') || nombreLower.includes('entrada')) return '🥟';
+    if (nombreLower.includes('bebida') || nombreLower.includes('gaseosa') || nombreLower.includes('refresco')) return '🥤';
+    if (nombreLower.includes('burger') || nombreLower.includes('hambur')) return '🍔';
+    if (nombreLower.includes('postre') || nombreLower.includes('dulce')) return '🍨';
+    if (nombreLower.includes('ensalada')) return '🥗';
+    if (nombreLower.includes('pasta') || nombreLower.includes('tallar')) return '🍝';
+    if (nombreLower.includes('mariscos') || nombreLower.includes('ceviche')) return '🦐';
+    return '🍴'; // emoji genérico para cualquier categoría nueva
+  };
+
+  // Botones de filtro dinámicos: "Todos" + categorías vendibles (excluye tipo insumo)
+  const categoriasFiltro = [
+    { value: 'todos', label: 'Todos', icon: '📋' },
+    ...(categoriasDB
+      ?.filter(cat => cat.tipo !== 'insumo') // Los insumos son de almacén, no se venden
+      .map(cat => ({
+        value: cat.nombre,
+        label: cat.nombre,
+        icon: getCategoriaEmoji(cat.nombre),
+      })) || []),
+  ];
+
+
 
   const agregarDetalleMutation = useMutation({
     mutationFn: async (detalles) => {
@@ -365,20 +388,30 @@ export const Pedidos = () => {
   const filteredProductos = productos?.filter((prod) => {
     if (prod.tipo === 'insumo') return false;
     const matchesSearch = prod.nombre.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategoria = filterCategoria === 'todos' || prod.categoria_nombre === filterCategoria;
+    const matchesCategoria = filterCategoria === 'todos' || (prod.categoria_nombre?.trim().toLowerCase() === filterCategoria.trim().toLowerCase());
     return matchesSearch && matchesCategoria;
   });
 
-  const categoriasFiltro = [
-    { value: 'todos', label: 'Todos', icon: '📋' },
-    { value: 'Entradas', label: 'Entradas', icon: '🥗' },
-    { value: 'Platos de Fondo', label: 'Platos', icon: '🍛' },
-    { value: 'Platos a la carta', label: 'A la Carta', icon: '🍽️' },
-    { value: 'Caldos', label: 'Caldos', icon: '🍲' },
-    { value: 'Bebidas', label: 'Bebidas', icon: '🥤' },
-    { value: 'Snacks', label: 'Snacks', icon: '🍿' },
-    { value: 'Postres', label: 'Postres', icon: '🍰' },
-  ];
+
+
+  // Agrupa las pizzas por nombre base; el resto de productos se añaden tal cual
+  const productosMostrar = (() => {
+    const resultado = [];
+    const grupoPizzas = {};
+    (filteredProductos || []).forEach((prod) => {
+      if (prod.categoria_nombre !== 'Pizzas') {
+        resultado.push(prod);
+      } else {
+        const nombreBase = prod.nombre.split(' - ')[0];
+        if (!grupoPizzas[nombreBase]) {
+          grupoPizzas[nombreBase] = { nombreBase, variantes: [], categoria_nombre: 'Pizzas', _key: nombreBase };
+          resultado.push(grupoPizzas[nombreBase]);
+        }
+        grupoPizzas[nombreBase].variantes.push(prod);
+      }
+    });
+    return resultado;
+  })();
 
   const agregarAlCarritoIndividual = (producto) => {
     setSelectedProductos((prev) => {
@@ -398,31 +431,9 @@ export const Pedidos = () => {
   };
 
   const handleAgregarProducto = (producto) => {
-    if (producto.categoria_nombre === 'Entradas' || producto.categoria_nombre === 'Platos de Fondo') {
-      Swal.fire({
-        title: '¿Armar Menú del Día?',
-        text: `Has seleccionado "${producto.nombre}". ¿Deseas armar un menú en combo o vender este plato individualmente?`,
-        icon: 'question',
-        showCancelButton: true,
-        showDenyButton: true,
-        confirmButtonColor: '#9333ea',
-        denyButtonColor: '#2563eb',
-        confirmButtonText: '🍽️ Armar Combo Menú',
-        denyButtonText: '🛒 Vender Individual',
-        cancelButtonText: 'Cancelar'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          setFilterCategoria('menu');
-          if (producto.categoria_nombre === 'Entradas') {
-            setMenuSeleccion({ entrada: producto, fondo: null });
-          } else {
-            setMenuSeleccion({ entrada: null, fondo: producto });
-          }
-          setShowMenuModal(true);
-        } else if (result.isDenied) {
-          agregarAlCarritoIndividual(producto);
-        }
-      });
+    if (producto.variantes) {
+      // Es un grupo de pizzas: abrir modal de tamaños
+      setPizzaSeleccionada(producto);
       return;
     }
     agregarAlCarritoIndividual(producto);
@@ -527,26 +538,7 @@ export const Pedidos = () => {
     }
   };
 
-  const handleSeleccionarEntrada = (producto) => setMenuSeleccion(prev => ({ ...prev, entrada: producto }));
-  const handleSeleccionarFondo = (producto) => setMenuSeleccion(prev => ({ ...prev, fondo: producto }));
 
-  const handleAgregarMenu = () => {
-    if (!menuSeleccion.entrada || !menuSeleccion.fondo) {
-      Swal.fire({ icon: 'warning', title: 'Selecciona ambos', text: 'Elige una entrada y un plato de fondo' });
-      return;
-    }
-    setSelectedProductos(prev => [...prev, {
-      producto_id: menuSeleccion.fondo.id,
-      cantidad: 1,
-      precio: menuSeleccion.fondo.precio_venta,
-      es_menu: true,
-      entrada_incluida: { id: menuSeleccion.entrada.id, nombre: menuSeleccion.entrada.nombre },
-      fondo_incluido: { id: menuSeleccion.fondo.id, nombre: menuSeleccion.fondo.nombre },
-    }]);
-    setShowMenuModal(false);
-    setMenuSeleccion({ entrada: null, fondo: null });
-    Swal.fire({ icon: 'success', title: 'Menú agregado', timer: 1500, showConfirmButton: false });
-  };
 
   const totalCarrito = selectedProductos.reduce((sum, p) => sum + parseFloat(p.precio) * p.cantidad, 0);
 
@@ -587,8 +579,8 @@ ${detalles.map(d => {
   };
 
   // ✅ IMPRESIÓN CAJA CON NOMBRE CLIENTE (MANTENIENDO IGV)
-const imprimirComprobanteCaja = async (orden) => {
-      const total = orden.detalles.reduce((s, d) => s + parseFloat(d.subtotal), 0);
+  const imprimirComprobanteCaja = async (orden) => {
+    const total = orden.detalles.reduce((s, d) => s + parseFloat(d.subtotal), 0);
     const igv = total * 0.18;
     const subtotal = total - igv;
     const contenido = `
@@ -926,39 +918,36 @@ TOTAL:       S/ ${total.toFixed(2)}
                   {cat.icon} {cat.label}
                 </Button>
               ))}
-              <Button variant={filterCategoria === 'menu' ? 'default' : 'outline'} size="sm"
-                onClick={() => { setFilterCategoria('menu'); setShowMenuModal(true); }}
-                className="text-sm bg-purple-600 hover:bg-purple-700">
-                🍽️ Menú del Día
-              </Button>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-              {filterCategoria === 'menu' ? (
-                <div className="col-span-full text-center py-8 text-gray-500">
-                  Click en "🍽️ Menú del Día" para armar tu combo
-                </div>
-              ) : filteredProductos?.map((producto) => (
-                <button key={producto.id} onClick={() => handleAgregarProducto(producto)}
-                  className="border border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all text-left overflow-hidden flex flex-col">
-                  {/* Imagen del producto (solo desktop) */}
-                  {producto.imagen_url ? (
+              {productosMostrar?.map((item) => (
+                <button key={item.variantes ? item._key : item.id} onClick={() => handleAgregarProducto(item)}
+                  className="border border-gray-200 rounded-lg hover:border-orange-400 hover:shadow-md transition-all text-left overflow-hidden flex flex-col">
+                  {/* Imagen (solo para productos individuales) */}
+                  {!item.variantes && item.imagen_url ? (
                     <div className="w-full h-28 bg-gray-50 overflow-hidden flex-shrink-0">
                       <img
-                        src={producto.imagen_url}
-                        alt={producto.nombre}
+                        src={item.imagen_url}
+                        alt={item.nombre}
                         className="w-full h-full object-cover object-center"
                         onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.classList.add('hidden'); }}
                       />
                     </div>
                   ) : (
-                    <div className="w-full h-28 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center flex-shrink-0">
-                      <Utensils className="h-8 w-8 text-gray-400" />
+                    <div className="w-full h-28 bg-gradient-to-br from-orange-50 to-orange-100 flex items-center justify-center flex-shrink-0">
+                      <span className="text-4xl">{item.variantes ? '🍕' : '🍽️'}</span>
                     </div>
                   )}
                   <div className="p-3 flex flex-col flex-1">
-                    <h3 className="font-semibold text-gray-900 text-sm leading-tight">{producto.nombre}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">{producto.categoria_nombre}</p>
-                    <p className="text-base font-bold text-blue-600 mt-auto pt-2">S/ {producto.precio_venta.toFixed(2)}</p>
+                    <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                      {item.variantes ? item.nombreBase : item.nombre}
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">{item.categoria_nombre}</p>
+                    {item.variantes ? (
+                      <p className="text-sm font-semibold text-orange-500 mt-auto pt-2">Ver Tamaños →</p>
+                    ) : (
+                      <p className="text-base font-bold text-blue-600 mt-auto pt-2">S/ {item.precio_venta.toFixed(2)}</p>
+                    )}
                   </div>
                 </button>
               ))}
@@ -1034,10 +1023,6 @@ TOTAL:       S/ ${total.toFixed(2)}
               {cat.icon} {cat.label}
             </button>
           ))}
-          <button onClick={() => { setFilterCategoria('menu'); setShowMenuModal(true); }}
-            className="flex-shrink-0 px-3 py-1 rounded-full text-xs bg-purple-600 text-white border border-purple-600">
-            🍽️ Menú del Día
-          </button>
         </div>
 
         <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2">
@@ -1046,23 +1031,27 @@ TOTAL:       S/ ${total.toFixed(2)}
             placeholder="Buscar producto..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
 
-        {filterCategoria !== 'menu' && (
-          <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-            {filteredProductos?.map((producto) => (
-              <button key={producto.id} onClick={() => handleAgregarProducto(producto)}
-                className="p-3 border border-gray-200 rounded-xl bg-white text-left active:scale-95 transition-transform">
-                <p className="font-medium text-[13px] text-gray-900 leading-tight mb-1">{producto.nombre}</p>
-                <p className="text-[11px] text-gray-400 mb-2">{producto.categoria_nombre}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-[14px] font-semibold text-blue-700">S/ {producto.precio_venta.toFixed(2)}</span>
-                  <span className="w-6 h-6 rounded-md bg-[#1e3a5f] flex items-center justify-center">
-                    <Plus className="h-3.5 w-3.5 text-white" />
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+          {productosMostrar?.map((item) => (
+            <button key={item.variantes ? item._key : item.id} onClick={() => handleAgregarProducto(item)}
+              className="p-3 border border-gray-200 rounded-xl bg-white text-left active:scale-95 transition-transform">
+              <p className="font-medium text-[13px] text-gray-900 leading-tight mb-1">
+                {item.variantes ? item.nombreBase : item.nombre}
+              </p>
+              <p className="text-[11px] text-gray-400 mb-2">{item.categoria_nombre}</p>
+              <div className="flex items-center justify-between">
+                {item.variantes ? (
+                  <span className="text-[13px] font-semibold text-orange-500">Ver Tamaños →</span>
+                ) : (
+                  <span className="text-[14px] font-semibold text-blue-700">S/ {item.precio_venta.toFixed(2)}</span>
+                )}
+                <span className="w-6 h-6 rounded-md bg-[#1e3a5f] flex items-center justify-center">
+                  <Plus className="h-3.5 w-3.5 text-white" />
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
 
         {selectedProductos.length > 0 && (
           <div className="border border-green-200 rounded-xl overflow-hidden">
@@ -1307,60 +1296,32 @@ TOTAL:       S/ ${total.toFixed(2)}
         </div>
       </div>
 
-      {/* ── MODAL MENÚ DEL DÍA ── */}
-      <Dialog open={showMenuModal} onOpenChange={setShowMenuModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      {/* ── MODAL SELECCIÓN DE TAMAÑO DE PIZZA ── */}
+      <Dialog open={!!pizzaSeleccionada} onOpenChange={(open) => { if (!open) setPizzaSeleccionada(null); }}>
+        <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>🍽️ Armar Menú del Día</DialogTitle>
+            <DialogTitle>🍕 Elige el tamaño para: {pizzaSeleccionada?.nombreBase}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
-            <div>
-              <h3 className="font-semibold mb-3 flex items-center gap-2"><span className="text-lg">🥗</span> Entradas Disponibles</h3>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {productosMenu?.filter(p => p.categoria_nombre === 'Entradas').map((prod) => (
-                  <button key={prod.id} onClick={() => handleSeleccionarEntrada(prod)}
-                    className={`w-full p-3 text-left border rounded-lg transition-all ${menuSeleccion.entrada?.id === prod.id
-                      ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
-                      : 'border-gray-200 hover:border-purple-300'}`}>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">{prod.nombre}</span>
-                      {menuSeleccion.entrada?.id === prod.id && <Badge className="bg-purple-600">✓</Badge>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-3 flex items-center gap-2"><span className="text-lg">🍛</span> Platos de Fondo Disponibles</h3>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {productosMenu?.filter(p => p.categoria_nombre === 'Platos de Fondo').map((prod) => (
-                  <button key={prod.id} onClick={() => handleSeleccionarFondo(prod)}
-                    className={`w-full p-3 text-left border rounded-lg transition-all ${menuSeleccion.fondo?.id === prod.id
-                      ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
-                      : 'border-gray-200 hover:border-purple-300'}`}>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">{prod.nombre}</span>
-                      <span className="font-bold text-blue-600">S/ {prod.precio_venta.toFixed(2)}</span>
-                      {menuSeleccion.fondo?.id === prod.id && <Badge className="bg-purple-600">✓</Badge>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="py-4 space-y-3">
+            {pizzaSeleccionada?.variantes?.map((variante) => {
+              const tamano = variante.nombre.split(' - ')[1] || variante.nombre;
+              return (
+                <button
+                  key={variante.id}
+                  onClick={() => { agregarAlCarritoIndividual(variante); setPizzaSeleccionada(null); }}
+                  className="w-full flex items-center justify-between p-4 border-2 border-gray-200 rounded-xl hover:border-orange-400 hover:bg-orange-50 active:scale-[0.98] transition-all text-left group"
+                >
+                  <div>
+                    <p className="font-semibold text-gray-900 text-base group-hover:text-orange-700">{tamano}</p>
+                    <p className="text-xs text-gray-400">{pizzaSeleccionada?.nombreBase}</p>
+                  </div>
+                  <span className="text-lg font-bold text-blue-600">S/ {variante.precio_venta.toFixed(2)}</span>
+                </button>
+              );
+            })}
           </div>
-          {menuSeleccion.entrada && menuSeleccion.fondo && (
-            <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-              <p className="font-medium text-purple-900">Menú: {menuSeleccion.entrada.nombre} + {menuSeleccion.fondo.nombre}</p>
-              <p className="text-sm text-purple-700">Precio: S/ {menuSeleccion.fondo.precio_venta.toFixed(2)} (entrada incluida)</p>
-            </div>
-          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowMenuModal(false); setMenuSeleccion({ entrada: null, fondo: null }); }}>
-              Cancelar
-            </Button>
-            <Button onClick={handleAgregarMenu} disabled={!menuSeleccion.entrada || !menuSeleccion.fondo} className="bg-purple-600 hover:bg-purple-700">
-              Agregar Menú
-            </Button>
+            <Button variant="outline" onClick={() => setPizzaSeleccionada(null)}>Cancelar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

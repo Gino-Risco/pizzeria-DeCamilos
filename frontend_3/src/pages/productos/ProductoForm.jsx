@@ -23,10 +23,10 @@ export const ProductoForm = ({ modo }) => {
     nombre: '',
     descripcion: '',
     categoria_id: '',
-    tipo: 'preparado', // Valor por defecto
+    tipo: 'fondo', // Valor por defecto para pizzería
     precio_venta: '',
     costo_promedio: '',
-    disponible_en_menu: false,
+    disponible_en_menu: true, // Por defecto activo en pedidos
     control_stock: false,
     unidad_medida: 'unidad',
     stock_actual: '0',
@@ -36,7 +36,7 @@ export const ProductoForm = ({ modo }) => {
 
   // CONFIGURACIÓN DINÁMICA SEGÚN MODO
   const config = {
-    isCarta: modo === 'carta' || (isEditMode && formData.tipo === 'preparado'),
+    isCarta: modo === 'carta' || (isEditMode && (formData.tipo === 'fondo' || formData.tipo === 'entrada' || formData.tipo === 'preparado')),
     isAlmacen: modo === 'almacen' || (isEditMode && (formData.tipo === 'insumo' || formData.tipo === 'empacado')),
     titulo: isEditMode ? 'Editar Detalle' : (modo === 'carta' ? 'Nuevo Plato' : 'Nuevo Producto'),
     subtitulo: modo === 'carta' 
@@ -51,9 +51,9 @@ export const ProductoForm = ({ modo }) => {
   useEffect(() => {
     if (!isEditMode) {
       if (modo === 'carta') {
-        setFormData(prev => ({ ...prev, tipo: 'preparado', control_stock: false }));
+        setFormData(prev => ({ ...prev, tipo: 'fondo', control_stock: false, disponible_en_menu: true }));
       } else if (modo === 'almacen') {
-        setFormData(prev => ({ ...prev, tipo: 'insumo', control_stock: true }));
+        setFormData(prev => ({ ...prev, tipo: 'insumo', control_stock: true, disponible_en_menu: false }));
       }
     }
   }, [modo, isEditMode]);
@@ -109,8 +109,22 @@ export const ProductoForm = ({ modo }) => {
     setFormData(prev => {
       const newData = { ...prev, [name]: type === 'checkbox' ? checked : value };
       if (name === 'tipo') {
-        if (value === 'insumo' || value === 'empacado') newData.control_stock = true;
-        else if (value === 'preparado') newData.control_stock = false;
+        if (value === 'insumo' || value === 'empacado') {
+          newData.control_stock = true;
+          newData.disponible_en_menu = false;
+        } else if (value === 'fondo' || value === 'entrada' || value === 'preparado') {
+          newData.control_stock = false;
+          newData.disponible_en_menu = true;
+        }
+      }
+      // Si se selecciona una categoría de tipo 'insumo', forzar configuración de almacén
+      if (name === 'categoria_id') {
+        const selectedCat = categorias?.find(c => c.id === parseInt(value));
+        if (selectedCat?.tipo === 'insumo') {
+          newData.tipo = 'insumo';
+          newData.control_stock = true;
+          newData.disponible_en_menu = false;
+        }
       }
       return newData;
     });
@@ -203,8 +217,16 @@ try {
                       {categorias?.map((cat) => (<option key={cat.id} value={cat.id}>{cat.nombre}</option>))}
                     </select>
                   </div>
-                  {/* El selector de TIPO solo aparece en ALMACÉN o edición */}
-                  {config.isAlmacen && (
+                  {/* Selector de tipo visible en Carta para elegir entre fondo/entrada, y en Almacén para insumo/empacado */}
+                  {config.isCarta ? (
+                    <div>
+                      <Label>Tipo de Producto *</Label>
+                      <select name="tipo" value={formData.tipo} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                        <option value="fondo">Plato / Bebida principal</option>
+                        <option value="entrada">Entrada / Piqueo</option>
+                      </select>
+                    </div>
+                  ) : config.isAlmacen ? (
                     <div>
                       <Label>Tipo de Artículo *</Label>
                       <select name="tipo" value={formData.tipo} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
@@ -212,7 +234,7 @@ try {
                         <option value="empacado">Empacado (Stock automático)</option>
                       </select>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
@@ -291,11 +313,11 @@ try {
             {config.isCarta && (
                <Card>
                  <CardContent className="pt-6">
-                    <label className="flex items-start gap-3 cursor-pointer p-3 bg-purple-50 rounded-lg border border-purple-100">
-                      <input type="checkbox" name="disponible_en_menu" checked={formData.disponible_en_menu} onChange={handleChange} className="mt-1 rounded text-purple-600 h-4 w-4" />
+                    <label className="flex items-start gap-3 cursor-pointer p-3 bg-orange-50 rounded-lg border border-orange-100">
+                      <input type="checkbox" name="disponible_en_menu" checked={formData.disponible_en_menu} onChange={handleChange} className="mt-1 rounded text-orange-500 h-4 w-4" />
                       <div>
-                        <span className="font-semibold text-purple-900">Disponible en Menú del Día</span>
-                        <p className="text-xs text-purple-700">Aparecerá como opción en la toma de pedidos rápidos.</p>
+                        <span className="font-semibold text-orange-900">Disponible en Pedidos</span>
+                        <p className="text-xs text-orange-700">Aparecerá en el catálogo al tomar un pedido.</p>
                       </div>
                     </label>
                  </CardContent>

@@ -40,10 +40,7 @@ async function getCategoriaById(id) {
 }
 
 async function createCategoria(data) {
-  // categoria object arriving from UI only contains name, description and
-  // a color picker. The `tipo` field was a leftover from the initial
-  // implementation and conflicted with product.tipo. We no longer expect it.
-  const { nombre, descripcion, color } = data;
+  const { nombre, descripcion, color, tipo } = data;
 
   // Validar que no exista nombre duplicado
   const existing = await query(
@@ -55,12 +52,13 @@ async function createCategoria(data) {
     throw AppError.conflict('Ya existe una categoría con ese nombre');
   }
 
-  // note: add color column if it exists in the database schema
+  const tipoValido = tipo || 'fondo'; // default seguro para pizzería
+
   const result = await query(
-    `INSERT INTO ${TABLE.CATEGORIAS} (nombre, descripcion, color, activo)
-     VALUES ($1, $2, $3, TRUE)
+    `INSERT INTO ${TABLE.CATEGORIAS} (nombre, descripcion, color, tipo, activo)
+     VALUES ($1, $2, $3, $4, TRUE)
      RETURNING *`,
-    [nombre, descripcion || null, color || '#3b82f6']
+    [nombre, descripcion || null, color || '#3b82f6', tipoValido]
   );
 
   return result.rows[0];
