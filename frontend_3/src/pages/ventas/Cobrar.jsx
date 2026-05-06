@@ -142,8 +142,8 @@ export const Ventas = () => {
       // 📄 DISEÑO DE PRE-CUENTA
       contenido = `
 ══════════════════════════
-       RESTAURANTE 
-   ENTRE GUSTOS Y SABORES
+         PIZZERÍA
+       D' CAMILOS
 ══════════════════════════
       *** PRE-CUENTA ***
 ${identificador}
@@ -169,8 +169,8 @@ TOTAL:         S/ ${totalTicket.toFixed(2)}
       // 🧾 DISEÑO DE TICKET FINAL
       contenido = `
 ══════════════════════════
-      RESTAURANTE 
-   ENTRE GUSTOS Y SABORES
+        PIZZERÍA
+       D' CAMILOS
    RUC: 20123456789
 ══════════════════════════
 TICKET #${venta.numero_ticket || 'S/N'}

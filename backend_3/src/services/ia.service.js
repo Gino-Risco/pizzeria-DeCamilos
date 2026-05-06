@@ -35,7 +35,7 @@ async function detectarIntencion(preguntaDelUsuario) {
 // ==========================================
 async function generarRespuesta(pregunta, datosCrudos) {
   const prompt = `
-    Eres el Copiloto Gerencial del restaurante "Entre gustos y sabores".
+    Eres el Copiloto Gerencial de la Pizzería "D' CAMILOS".
     
     IMPORTANTE:
     - No inventes datos bajo ninguna circunstancia.

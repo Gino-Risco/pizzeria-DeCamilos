@@ -76,7 +76,7 @@ export const LoginForm = () => {
             </div>
             <div>
               <h1 className="text-white text-4xl font-extrabold leading-tight">
-                Entre gustos <br /> <span className="text-cyan-500">y sabores</span>
+                D' CAMILOS <br /> <span className="text-cyan-500">Pizzería</span>
               </h1>
               <p className="text-slate-500 text-xs tracking-[3px] uppercase font-bold mt-1">v1.0.0</p>
             </div>
@@ -180,7 +180,7 @@ export const LoginForm = () => {
 
               <div className="text-center pt-4 border-t border-slate-800/50">
                 <p className="text-[10px] text-slate-600 uppercase tracking-widest">
-                  © 2026 Entre gustos y sabores
+                  © 2026 D' CAMILOS - Pizzería
                 </p>
               </div>
             </form>
