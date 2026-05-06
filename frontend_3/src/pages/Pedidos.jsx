@@ -68,6 +68,27 @@ export const Pedidos = () => {
     },
   });
 
+  // Query separada para empaques/descartables: los trae aunque sean tipo "insumo"
+  // porque el endpoint principal los puede filtrar del panel de venta
+  const { data: productosEmpaques } = useQuery({
+    queryKey: ['productos', 'empaques'],
+    queryFn: async () => {
+      // Trae TODOS los productos activos sin importar tipo, para poder encontrar empaques
+      const data = await productosService.getAll({ activo: true });
+      return data
+        .filter(p => {
+          const cat = p.categoria_nombre?.toLowerCase() || '';
+          return cat.includes('empaque') || cat.includes('descartable') || cat.includes('envase');
+        })
+        .map(p => ({
+          ...p,
+          precio_venta: parseFloat(p.precio_venta) > 0
+            ? parseFloat(p.precio_venta)
+            : parseFloat(p.costo_promedio) || 0,
+        }));
+    },
+  });
+
   const { data: categoriasDB } = useQuery({
     queryKey: ['categorias'],
     queryFn: async () => await categoriasService.getAll(),
@@ -619,6 +640,135 @@ TOTAL:       S/ ${total.toFixed(2)}
     setObservaciones(prev => ({ ...prev, [detalleId]: texto }));
   };
 
+  // ── LÓGICA DE EMPAQUES / DESCARTABLES ──
+  // Solo es true cuando hay una orden abierta Y es para llevar (sin mesa)
+  const esOrdenParaLlevar = !!ordenId && !!orden && !orden.mesa_id;
+
+  const handleAgregarEmpaque = async () => {
+    // Usa la query dedicada de empaques (incluye insumos de categoría Empaques/Descartables)
+    const empaquesDisponibles = (productosEmpaques || []).map(p => ({
+      ...p,
+      precio_venta: parseFloat(p.precio_venta) > 0
+        ? parseFloat(p.precio_venta)
+        : parseFloat(p.costo_promedio) || 0,
+    }));
+
+    // Construimos las filas de opciones como React state local para el modal
+    const opcionesParaModal = empaquesDisponibles.length > 0
+      ? empaquesDisponibles
+      : [
+          // Fallback: opciones hardcodeadas hasta que se creen los productos en BD
+          { id: '__taper_s', nombre: 'Taper Chico (Alitas 4 pzas)', precio_venta: 1.00, _esTemporal: true },
+          { id: '__taper_m', nombre: 'Taper Grande (Alitas 6 pzas)', precio_venta: 1.50, _esTemporal: true },
+          { id: '__vaso',    nombre: 'Vaso Descartable (Jugo)',       precio_venta: 0.50, _esTemporal: true },
+        ];
+
+    // Usamos una Promise para comunicar la selección fuera del HTML de Swal
+    const seleccion = await new Promise((resolve) => {
+      // Guardamos callbacks en un Map para evitar globals
+      const callbackMap = {};
+      opcionesParaModal.forEach((emp) => {
+        callbackMap[emp.id] = emp;
+      });
+
+      // Exponemos solo lo mínimo necesario
+      window.__empaqueResolve = resolve;
+      window.__empaqueOpciones = callbackMap;
+
+      const esFallback = empaquesDisponibles.length === 0;
+
+      const botonesHTML = opcionesParaModal.map(emp => `
+        <button
+          type="button"
+          onclick="window.__empaqueResolve(window.__empaqueOpciones['${emp.id}']); Swal.close();"
+          style="
+            display:flex; justify-content:space-between; align-items:center;
+            width:100%; margin-bottom:8px; padding:12px 16px;
+            border:1px solid #e5e7eb; border-radius:10px;
+            background:#fff; cursor:pointer; transition:all 0.15s;
+            font-size:14px;
+          "
+          onmouseover="this.style.borderColor='#f97316';this.style.background='#fff7ed';"
+          onmouseout="this.style.borderColor='#e5e7eb';this.style.background='#fff';"
+        >
+          <span style="font-weight:500;color:#111827;">🥡 ${emp.nombre}</span>
+          <span style="font-weight:700;color:#ea580c;">S/ ${emp.precio_venta.toFixed(2)}</span>
+        </button>
+      `).join('');
+
+      const avisofallback = esFallback ? `
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;margin-bottom:12px;text-align:left;">
+          <p style="margin:0;font-size:12px;color:#1d4ed8;">
+            💡 <strong>Tip:</strong> Crea una categoría "Empaques" en tu panel de productos para gestionar precios desde ahí.
+          </p>
+        </div>
+      ` : '';
+
+      Swal.fire({
+        title: '🥡 Agregar Descartable',
+        html: `
+          <div style="text-align:left;">
+            <p style="color:#6b7280;font-size:13px;margin-bottom:12px;">
+              Selecciona el envase para este pedido para llevar:
+            </p>
+            ${avisofallback}
+            ${botonesHTML}
+          </div>
+        `,
+        showConfirmButton: false,
+        showCancelButton: true,
+        cancelButtonText: 'Cancelar',
+        width: '420px',
+      }).then(({ isDismissed }) => {
+        if (isDismissed) resolve(null);
+      });
+    });
+
+    // Limpiamos los globals
+    delete window.__empaqueResolve;
+    delete window.__empaqueOpciones;
+
+    if (!seleccion) return;
+
+    if (seleccion._esTemporal) {
+      // Es un item del fallback: agregamos como ítem genérico con precio_venta
+      // Se trata como producto sin id real: lo sumamos como item especial al carrito
+      setSelectedProductos(prev => {
+        const existing = prev.find(p => p.producto_id === seleccion.id);
+        if (existing) {
+          return prev.map(p => p.producto_id === seleccion.id ? { ...p, cantidad: p.cantidad + 1 } : p);
+        }
+        return [...prev, {
+          producto_id: seleccion.id,
+          cantidad: 1,
+          precio: seleccion.precio_venta,
+          es_menu: false,
+          entrada_incluida: null,
+          fondo_incluido: null,
+          _nombreTemporal: seleccion.nombre, // Para mostrarlo en el carrito
+          _esTemporal: true,
+        }];
+      });
+      Swal.fire({
+        toast: true, position: 'top-end', icon: 'warning',
+        title: `${seleccion.nombre} agregado (temporal)`,
+        text: 'Recuerda crear el producto en BD para que quede registrado.',
+        showConfirmButton: false, timer: 3000,
+      });
+    } else {
+      // Producto real de la BD: usamos el flujo normal
+      const productoDB = productos.find(p => p.id === seleccion.id);
+      if (productoDB) {
+        agregarAlCarritoIndividual(productoDB);
+        Swal.fire({
+          toast: true, position: 'top-end', icon: 'success',
+          title: `${seleccion.nombre} agregado`,
+          showConfirmButton: false, timer: 1500,
+        });
+      }
+    }
+  };
+
   // ========================================
   // RENDERIZADO
   // ========================================
@@ -968,12 +1118,14 @@ TOTAL:       S/ ${total.toFixed(2)}
               <div className="space-y-3 max-h-64 overflow-y-auto">
                 {selectedProductos.map((item) => {
                   const producto = productos?.find(p => p.id === item.producto_id);
+                  const nombreMostrar = item._esTemporal ? item._nombreTemporal : producto?.nombre;
                   return (
-                    <div key={item.producto_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={item.producto_id} className={`flex items-center justify-between p-3 rounded-lg ${item._esTemporal ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-900">{producto?.nombre}</p>
+                          <p className="font-medium text-gray-900">{nombreMostrar}</p>
                           {item.es_menu && <Badge className="bg-purple-600 text-white">MENÚ</Badge>}
+                          {item._esTemporal && <Badge className="bg-orange-400 text-white text-[10px]">Empaque</Badge>}
                         </div>
                         {item.es_menu && item.entrada_incluida && (
                           <p className="text-xs text-purple-600 mt-1">Incluye: {item.entrada_incluida.nombre}</p>
@@ -992,6 +1144,17 @@ TOTAL:       S/ ${total.toFixed(2)}
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {/* Botón de empaque: visible SIEMPRE que sea para llevar, sin importar si hay carrito */}
+            {esOrdenParaLlevar && (
+              <div className={`${selectedProductos.length > 0 ? '' : 'py-2'}`}>
+                <button
+                  onClick={handleAgregarEmpaque}
+                  className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-orange-300 text-orange-600 hover:bg-orange-50 hover:border-orange-400 rounded-lg py-2.5 text-sm font-medium transition-all"
+                >
+                  🥡 Agregar Descartable / Empaque
+                </button>
               </div>
             )}
             {selectedProductos.length > 0 && (
@@ -1058,12 +1221,16 @@ TOTAL:       S/ ${total.toFixed(2)}
             <div className="bg-white divide-y divide-gray-100">
               {selectedProductos.map((item) => {
                 const producto = productos?.find(p => p.id === item.producto_id);
+                const nombreMostrar = item._esTemporal ? item._nombreTemporal : producto?.nombre;
                 return (
-                  <div key={item.producto_id} className="flex items-center gap-2 px-3 py-2">
+                  <div key={item.producto_id} className={`flex items-center gap-2 px-3 py-2 ${item._esTemporal ? 'bg-orange-50' : ''}`}>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-medium text-gray-900 truncate">{producto?.nombre}</p>
+                      <p className="text-[13px] font-medium text-gray-900 truncate">{nombreMostrar}</p>
                       {item.es_menu && item.entrada_incluida && (
                         <p className="text-[11px] text-purple-600">Incluye: {item.entrada_incluida.nombre}</p>
+                      )}
+                      {item._esTemporal && (
+                        <span className="text-[10px] text-orange-500 font-medium">🥡 Empaque</span>
                       )}
                       <p className="text-[12px] text-gray-500">S/ {parseFloat(item.precio).toFixed(2)}</p>
                     </div>
@@ -1094,10 +1261,20 @@ TOTAL:       S/ ${total.toFixed(2)}
                 </span>
                 <span className="text-blue-700 font-semibold text-sm">S/ {totalCarrito.toFixed(2)}</span>
               </div>
-              <button onClick={handleGuardarOrden} disabled={agregarDetalleMutation.isPending}
-                className="bg-green-700 text-white text-xs font-medium px-4 py-2 rounded-lg">
-                {agregarDetalleMutation.isPending ? '...' : 'Agregar a la orden'}
-              </button>
+              <div className="flex items-center gap-1.5">
+                {esOrdenParaLlevar && (
+                  <button
+                    onClick={handleAgregarEmpaque}
+                    className="bg-orange-100 text-orange-700 border border-orange-300 text-xs font-medium px-3 py-2 rounded-lg flex items-center gap-1"
+                  >
+                    🥡 Empaque
+                  </button>
+                )}
+                <button onClick={handleGuardarOrden} disabled={agregarDetalleMutation.isPending}
+                  className="bg-green-700 text-white text-xs font-medium px-4 py-2 rounded-lg">
+                  {agregarDetalleMutation.isPending ? '...' : 'Agregar a la orden'}
+                </button>
+              </div>
             </div>
           </div>
         )}

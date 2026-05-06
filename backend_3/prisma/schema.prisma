@@ -1,0 +1,569 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["inventario", "pos", "public"]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model alertas_stock {
+  id                                            Int       @id @default(autoincrement())
+  producto_id                                   Int
+  tipo_alerta                                   String    @db.VarChar(20)
+  stock_en_alerta                               Decimal   @db.Decimal(10, 3)
+  stock_minimo                                  Decimal   @db.Decimal(10, 3)
+  referencia_tipo                               String?   @db.VarChar(50)
+  referencia_id                                 Int?
+  usuario_id                                    Int?
+  atendida                                      Boolean   @default(false)
+  atendida_por                                  Int?
+  fecha_atencion                                DateTime? @db.Timestamp(6)
+  created_at                                    DateTime  @default(now()) @db.Timestamp(6)
+  usuarios_alertas_stock_atendida_porTousuarios usuarios? @relation("alertas_stock_atendida_porTousuarios", fields: [atendida_por], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  productos                                     productos @relation(fields: [producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios_alertas_stock_usuario_idTousuarios   usuarios? @relation("alertas_stock_usuario_idTousuarios", fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_alertas_stock_fecha")
+  @@index([producto_id, atendida], map: "idx_alertas_stock_producto")
+  @@schema("inventario")
+}
+
+model categorias {
+  id          Int         @id @default(autoincrement())
+  nombre      String      @unique @db.VarChar(100)
+  tipo        item_tipo?
+  descripcion String?
+  activo      Boolean     @default(true)
+  created_at  DateTime    @default(now()) @db.Timestamp(6)
+  updated_at  DateTime    @default(now()) @db.Timestamp(6)
+  color       String      @default("#3b82f6")
+  productos   productos[]
+
+  @@schema("inventario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model compras {
+  id                 Int               @id @default(autoincrement())
+  proveedor_id       Int
+  usuario_id         Int
+  numero_compra      String            @unique @default(dbgenerated("gen_numero_compra()")) @db.VarChar(20)
+  subtotal           Decimal           @default(0) @db.Decimal(10, 2)
+  total              Decimal           @default(0) @db.Decimal(10, 2)
+  activo             Boolean           @default(true)
+  created_at         DateTime          @default(now()) @db.Timestamp(6)
+  updated_at         DateTime          @default(now()) @db.Timestamp(6)
+  observaciones      String?
+  fecha_emision      DateTime          @default(dbgenerated("CURRENT_DATE")) @db.Date
+  tipo_comprobante   String            @default("Nota de Venta") @db.VarChar(30)
+  serie_comprobante  String?           @db.VarChar(10)
+  numero_comprobante String?           @db.VarChar(20)
+  igv                Decimal           @default(0) @db.Decimal(10, 2)
+  metodo_pago        String?           @default("efectivo") @db.VarChar(20)
+  caja_movimiento_id Int?
+  caja_movimientos   caja_movimientos? @relation(fields: [caja_movimiento_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  proveedores        proveedores       @relation(fields: [proveedor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios           usuarios          @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  compras_detalle    compras_detalle[]
+
+  @@index([proveedor_id], map: "idx_compras_proveedor")
+  @@schema("inventario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model compras_detalle {
+  id             Int       @id @default(autoincrement())
+  compra_id      Int
+  producto_id    Int
+  cantidad       Decimal   @db.Decimal(10, 3)
+  costo_unitario Decimal   @db.Decimal(10, 2)
+  subtotal       Decimal?  @default(dbgenerated("(cantidad * costo_unitario)")) @db.Decimal(10, 2)
+  activo         Boolean   @default(true)
+  created_at     DateTime  @default(now()) @db.Timestamp(6)
+  compras        compras   @relation(fields: [compra_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productos      productos @relation(fields: [producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("inventario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model kardex {
+  id               Int         @id @default(autoincrement())
+  producto_id      Int
+  tipo_movimiento  kardex_tipo
+  cantidad         Decimal     @db.Decimal(10, 3)
+  stock_anterior   Decimal     @db.Decimal(10, 3)
+  stock_nuevo      Decimal     @db.Decimal(10, 3)
+  costo_unitario   Decimal?    @db.Decimal(14, 4)
+  referencia_tipo  String?     @db.VarChar(50)
+  referencia_id    Int?
+  referencia       String?     @db.VarChar(100)
+  usuario_id       Int?
+  reversion_de     Int?
+  created_at       DateTime    @default(now()) @db.Timestamp(6)
+  costo_promedio   Decimal?    @default(0) @db.Decimal(14, 4)
+  valor_movimiento Decimal?    @default(0) @db.Decimal(14, 4)
+  valor_saldo      Decimal?    @default(0) @db.Decimal(14, 4)
+  productos        productos   @relation(fields: [producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  kardex           kardex?     @relation("kardexTokardex", fields: [reversion_de], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_kardex     kardex[]    @relation("kardexTokardex")
+  usuarios         usuarios?   @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_kardex_fecha")
+  @@index([producto_id], map: "idx_kardex_producto")
+  @@index([referencia_tipo, referencia_id], map: "idx_kardex_referencia")
+  @@schema("inventario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model productos {
+  id                     Int                      @id @default(autoincrement())
+  nombre                 String                   @db.VarChar(150)
+  descripcion            String?
+  categoria_id           Int
+  tipo                   item_tipo                @default(fondo)
+  precio_venta           Decimal                  @db.Decimal(10, 2)
+  costo_promedio         Decimal                  @default(0) @db.Decimal(14, 4)
+  control_stock          Boolean                  @default(false)
+  stock_actual           Decimal                  @default(0) @db.Decimal(10, 3)
+  stock_minimo           Decimal                  @default(0) @db.Decimal(10, 3)
+  permite_stock_negativo Boolean                  @default(false)
+  unidad_medida          String                   @default("unidad") @db.VarChar(20)
+  activo                 Boolean                  @default(true)
+  created_at             DateTime                 @default(now()) @db.Timestamp(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamp(6)
+  disponible_en_menu     Boolean                  @default(false)
+  imagen_url             String?
+  alertas_stock          alertas_stock[]
+  compras_detalle        compras_detalle[]
+  kardex                 kardex[]
+  categorias             categorias               @relation(fields: [categoria_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salidas_cocina_detalle salidas_cocina_detalle[]
+  orden_detalles         orden_detalles[]
+  ventas_detalle         ventas_detalle[]
+
+  @@index([tipo, control_stock], map: "idx_productos_tipo")
+  @@schema("inventario")
+}
+
+model proveedores {
+  id            Int       @id @default(autoincrement())
+  nombre        String    @db.VarChar(150)
+  ruc           String?   @unique @db.VarChar(20)
+  telefono      String?   @db.VarChar(20)
+  direccion     String?
+  email         String?   @db.VarChar(100)
+  tipo_producto String?   @db.VarChar(100)
+  activo        Boolean   @default(true)
+  created_at    DateTime  @default(now()) @db.Timestamp(6)
+  updated_at    DateTime  @default(now()) @db.Timestamp(6)
+  compras       compras[]
+
+  @@schema("inventario")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model salidas_cocina {
+  id                                             Int                      @id @default(autoincrement())
+  usuario_id                                     Int
+  turno                                          turno_tipo
+  observaciones                                  String?
+  aprobado                                       Boolean                  @default(false)
+  aprobado_por                                   Int?
+  fecha_aprobacion                               DateTime?                @db.Timestamp(6)
+  activo                                         Boolean                  @default(true)
+  created_at                                     DateTime                 @default(now()) @db.Timestamp(6)
+  updated_at                                     DateTime                 @default(now()) @db.Timestamp(6)
+  usuarios_salidas_cocina_aprobado_porTousuarios usuarios?                @relation("salidas_cocina_aprobado_porTousuarios", fields: [aprobado_por], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios_salidas_cocina_usuario_idTousuarios   usuarios                 @relation("salidas_cocina_usuario_idTousuarios", fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salidas_cocina_detalle                         salidas_cocina_detalle[]
+
+  @@index([created_at(sort: Desc)], map: "idx_salidas_cocina_fecha")
+  @@schema("inventario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model salidas_cocina_detalle {
+  id             Int            @id @default(autoincrement())
+  salida_id      Int
+  producto_id    Int
+  cantidad       Decimal        @db.Decimal(10, 3)
+  observaciones  String?
+  activo         Boolean        @default(true)
+  created_at     DateTime       @default(now()) @db.Timestamp(6)
+  productos      productos      @relation(fields: [producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salidas_cocina salidas_cocina @relation(fields: [salida_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("inventario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model caja_aperturas {
+  id               Int                @id @default(autoincrement())
+  usuario_id       Int
+  monto_inicial    Decimal            @db.Decimal(10, 2)
+  estado           caja_estado        @default(abierta)
+  observaciones    String?
+  activo           Boolean            @default(true)
+  created_at       DateTime           @default(now()) @db.Timestamp(6)
+  updated_at       DateTime           @default(now()) @db.Timestamp(6)
+  usuarios         usuarios           @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  caja_arqueos     caja_arqueos[]
+  caja_cierres     caja_cierres?
+  caja_movimientos caja_movimientos[]
+
+  @@schema("pos")
+}
+
+model caja_arqueos {
+  id             Int            @id @default(autoincrement())
+  caja_id        Int
+  usuario_id     Int
+  monto_esperado Decimal        @db.Decimal(10, 2)
+  monto_contado  Decimal        @db.Decimal(10, 2)
+  diferencia     Decimal?       @default(dbgenerated("(monto_contado - monto_esperado)")) @db.Decimal(10, 2)
+  observaciones  String?
+  created_at     DateTime       @default(now()) @db.Timestamp(6)
+  caja_aperturas caja_aperturas @relation(fields: [caja_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuarios       usuarios       @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([caja_id], map: "idx_caja_arqueos_caja_id")
+  @@index([created_at(sort: Desc)], map: "idx_caja_arqueos_fecha")
+  @@schema("pos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model caja_cierres {
+  id                      Int            @id @default(autoincrement())
+  caja_id                 Int            @unique
+  usuario_id              Int
+  total_ventas            Decimal        @default(0) @db.Decimal(10, 2)
+  total_efectivo          Decimal        @default(0) @db.Decimal(10, 2)
+  total_tarjeta           Decimal        @default(0) @db.Decimal(10, 2)
+  total_otro              Decimal        @default(0) @db.Decimal(10, 2)
+  total_retiros           Decimal        @default(0) @db.Decimal(10, 2)
+  total_gastos            Decimal        @default(0) @db.Decimal(10, 2)
+  monto_inicial           Decimal        @default(0) @db.Decimal(10, 2)
+  monto_final_real        Decimal        @db.Decimal(10, 2)
+  observaciones           String?
+  created_at              DateTime       @default(now()) @db.Timestamp(6)
+  fondo_reservado_proximo Decimal        @default(0) @db.Decimal(10, 2)
+  monto_retirado_dueno    Decimal        @default(0) @db.Decimal(10, 2)
+  total_ingresos          Decimal        @default(0) @db.Decimal(10, 2)
+  monto_final_esperado    Decimal        @default(0) @db.Decimal(10, 2)
+  diferencia              Decimal        @default(0) @db.Decimal(10, 2)
+  turno                   String?        @db.VarChar(20)
+  caja_aperturas          caja_aperturas @relation(fields: [caja_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios                usuarios       @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("pos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model caja_movimientos {
+  id              Int            @id @default(autoincrement())
+  caja_id         Int
+  tipo            caja_mov_tipo
+  descripcion     String?
+  monto           Decimal        @db.Decimal(10, 2)
+  venta_id        Int?
+  usuario_id      Int
+  activo          Boolean        @default(true)
+  created_at      DateTime       @default(now()) @db.Timestamp(6)
+  referencia_tipo String?        @db.VarChar(20)
+  referencia_id   Int?
+  compras         compras[]
+  caja_aperturas  caja_aperturas @relation(fields: [caja_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios        usuarios       @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ventas          ventas?        @relation(fields: [venta_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([caja_id], map: "idx_caja_mov_caja")
+  @@index([created_at(sort: Desc)], map: "idx_caja_mov_fecha")
+  @@schema("pos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model mesas {
+  id         Int         @id @default(autoincrement())
+  numero     Int         @unique
+  capacidad  Int?
+  estado     mesa_estado @default(libre)
+  ubicacion  String?     @db.VarChar(50)
+  activo     Boolean     @default(true)
+  created_at DateTime    @default(now()) @db.Timestamp(6)
+  updated_at DateTime    @default(now()) @db.Timestamp(6)
+  ordenes    ordenes[]
+
+  @@schema("pos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model orden_detalles {
+  id                   Int              @id @default(autoincrement())
+  orden_id             Int
+  producto_id          Int
+  cantidad             Int
+  precio               Decimal          @db.Decimal(10, 2)
+  subtotal             Decimal?         @default(dbgenerated("((cantidad)::numeric * precio)")) @db.Decimal(10, 2)
+  observaciones        String?
+  estado_item          orden_estado     @default(abierta)
+  es_incluido_menu     Boolean          @default(false)
+  grupo_menu_id        Int?
+  enviado_cocina       Boolean          @default(false)
+  fecha_envio_cocina   DateTime?        @db.Timestamp(6)
+  activo               Boolean          @default(true)
+  created_at           DateTime         @default(now()) @db.Timestamp(6)
+  updated_at           DateTime         @default(now()) @db.Timestamp(6)
+  es_menu              Boolean          @default(false)
+  entrada_incluida     Json?
+  fondo_incluido       Json?
+  orden_detalles       orden_detalles?  @relation("orden_detallesToorden_detalles", fields: [grupo_menu_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_orden_detalles orden_detalles[] @relation("orden_detallesToorden_detalles")
+  ordenes              ordenes          @relation(fields: [orden_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productos            productos        @relation(fields: [producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([orden_id], map: "idx_orden_detalles_orden_id")
+  @@schema("pos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ordenes {
+  id               Int              @id @default(autoincrement())
+  mesa_id          Int?
+  mesero_id        Int
+  estado           orden_estado     @default(abierta)
+  numero_comanda   String           @default(dbgenerated("gen_numero_comanda()")) @db.VarChar(20)
+  observaciones    String?
+  activo           Boolean          @default(true)
+  created_at       DateTime         @default(now()) @db.Timestamp(6)
+  updated_at       DateTime         @default(now()) @db.Timestamp(6)
+  fecha_cierre     DateTime?        @db.Timestamp(6)
+  tipo_pedido      pedido_tipo      @default(salon)
+  descuento_tipo   String?          @db.VarChar(20)
+  descuento_valor  Decimal?         @default(0.00) @db.Decimal(10, 2)
+  descuento_total  Decimal?         @default(0.00) @db.Decimal(10, 2)
+  motivo_descuento String?          @db.VarChar(255)
+  nombre_cliente   String?          @db.VarChar(150)
+  orden_detalles   orden_detalles[]
+  mesas            mesas?           @relation(fields: [mesa_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios         usuarios         @relation(fields: [mesero_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tickets_cocina   tickets_cocina[]
+  ventas           ventas?
+
+  @@index([estado], map: "idx_ordenes_estado")
+  @@index([created_at(sort: Desc)], map: "idx_ordenes_fecha")
+  @@index([mesa_id], map: "idx_ordenes_mesa")
+  @@schema("pos")
+}
+
+model roles {
+  id          Int        @id @default(autoincrement())
+  nombre      rol_tipo   @unique
+  descripcion String?
+  activo      Boolean    @default(true)
+  created_at  DateTime   @default(now()) @db.Timestamp(6)
+  updated_at  DateTime   @default(now()) @db.Timestamp(6)
+  usuarios    usuarios[]
+
+  @@schema("pos")
+}
+
+model tickets_cocina {
+  id              Int         @id @default(autoincrement())
+  orden_id        Int
+  tipo_ticket     ticket_tipo @default(pedido_cocina)
+  impreso         Boolean     @default(false)
+  fecha_impresion DateTime?   @db.Timestamp(6)
+  activo          Boolean     @default(true)
+  created_at      DateTime    @default(now()) @db.Timestamp(6)
+  ordenes         ordenes     @relation(fields: [orden_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("pos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model usuarios {
+  id                                                   Int                @id @default(autoincrement())
+  nombre                                               String             @db.VarChar(100)
+  usuario                                              String             @unique @db.VarChar(50)
+  password                                             String             @db.VarChar(255)
+  correo                                               String?            @unique @db.VarChar(150)
+  rol_id                                               Int
+  activo                                               Boolean            @default(true)
+  created_at                                           DateTime           @default(now()) @db.Timestamp(6)
+  updated_at                                           DateTime           @default(now()) @db.Timestamp(6)
+  alertas_stock_alertas_stock_atendida_porTousuarios   alertas_stock[]    @relation("alertas_stock_atendida_porTousuarios")
+  alertas_stock_alertas_stock_usuario_idTousuarios     alertas_stock[]    @relation("alertas_stock_usuario_idTousuarios")
+  compras                                              compras[]
+  kardex                                               kardex[]
+  salidas_cocina_salidas_cocina_aprobado_porTousuarios salidas_cocina[]   @relation("salidas_cocina_aprobado_porTousuarios")
+  salidas_cocina_salidas_cocina_usuario_idTousuarios   salidas_cocina[]   @relation("salidas_cocina_usuario_idTousuarios")
+  caja_aperturas                                       caja_aperturas[]
+  caja_arqueos                                         caja_arqueos[]
+  caja_cierres                                         caja_cierres[]
+  caja_movimientos                                     caja_movimientos[]
+  ordenes                                              ordenes[]
+  roles                                                roles              @relation(fields: [rol_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ventas                                               ventas[]
+
+  @@schema("pos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ventas {
+  id               Int                @id @default(autoincrement())
+  orden_id         Int                @unique
+  cajero_id        Int
+  numero_ticket    String             @unique @default(dbgenerated("gen_numero_ticket()")) @db.VarChar(20)
+  subtotal         Decimal            @default(0) @db.Decimal(10, 2)
+  igv              Decimal            @default(0) @db.Decimal(10, 2)
+  descuento        Decimal            @default(0) @db.Decimal(10, 2)
+  total            Decimal            @db.Decimal(10, 2)
+  metodo_pago      pago_metodo
+  monto_pagado     Decimal            @db.Decimal(10, 2)
+  vuelto           Decimal?           @default(dbgenerated("(monto_pagado - total)")) @db.Decimal(10, 2)
+  activo           Boolean            @default(true)
+  created_at       DateTime           @default(now()) @db.Timestamp(6)
+  updated_at       DateTime           @default(now()) @db.Timestamp(6)
+  caja_movimientos caja_movimientos[]
+  usuarios         usuarios           @relation(fields: [cajero_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ordenes          ordenes            @relation(fields: [orden_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ventas_detalle   ventas_detalle[]
+
+  @@index([cajero_id], map: "idx_ventas_cajero")
+  @@index([created_at(sort: Desc)], map: "idx_ventas_fecha")
+  @@schema("pos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ventas_detalle {
+  id               Int       @id @default(autoincrement())
+  venta_id         Int
+  producto_id      Int
+  cantidad         Int
+  precio           Decimal   @db.Decimal(10, 2)
+  subtotal         Decimal?  @default(dbgenerated("((cantidad)::numeric * precio)")) @db.Decimal(10, 2)
+  es_incluido_menu Boolean   @default(false)
+  activo           Boolean   @default(true)
+  created_at       DateTime  @default(now()) @db.Timestamp(6)
+  productos        productos @relation(fields: [producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ventas           ventas    @relation(fields: [venta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("pos")
+}
+
+enum caja_estado {
+  abierta
+  cerrada
+
+  @@schema("public")
+}
+
+enum caja_mov_tipo {
+  apertura
+  venta
+  retiro
+  gasto
+  cierre
+  ingreso
+
+  @@schema("public")
+}
+
+enum item_tipo {
+  entrada
+  fondo
+  bebida
+  postre
+  snack
+  insumo
+  preparado
+  empacado
+
+  @@schema("public")
+}
+
+enum kardex_tipo {
+  compra
+  venta
+  salida_cocina
+  ajuste
+  merma
+  reversion
+  ajuste_entrada
+  ajuste_salida
+
+  @@schema("public")
+}
+
+enum mesa_estado {
+  libre
+  ocupada
+  reservada
+  mantenimiento
+
+  @@schema("public")
+}
+
+enum orden_estado {
+  abierta
+  enviada_cocina
+  preparando
+  lista
+  cobrada
+  cancelada
+
+  @@schema("public")
+}
+
+enum pago_metodo {
+  efectivo
+  tarjeta
+  yape
+  plin
+  mixto
+
+  @@schema("public")
+}
+
+enum pedido_tipo {
+  salon
+  llevar
+  delivery
+
+  @@schema("public")
+}
+
+enum rol_tipo {
+  administrador
+  cajero
+  mesero
+
+  @@schema("public")
+}
+
+enum ticket_tipo {
+  pedido_cocina
+  venta_cliente
+
+  @@schema("public")
+}
+
+enum turno_tipo {
+  manana
+  tarde
+  noche
+
+  @@schema("public")
+}
