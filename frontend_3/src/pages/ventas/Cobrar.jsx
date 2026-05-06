@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { enviarImpresion } from '@/utils/printServer';
 
 export const Ventas = () => {
   const navigate = useNavigate();
@@ -203,23 +204,8 @@ VUELTO:    S/ ${parseFloat(venta.vuelto || 0).toFixed(2)}
       confirmButtonColor: esPreCuenta ? '#3b82f6' : '#22c55e',
       width: '400px',
     });
-    // 👇 ESTE ES EL BLOQUE QUE FALTABA: Enviar la petición al servidor USB 👇
-    try {
-      // Nota: Enviamos 'venta' dentro de la propiedad 'orden' porque así lo espera el server.js
-      const response = await fetch('http://localhost:3001/api/imprimir/caja', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orden: venta, esPreCuenta }) // Enviamos también si es pre-cuenta para que el microservicio pueda ajustar el formato si es necesario
-      });
-      
-      if (response.ok) {
-        console.log('✅ Comprobante de caja enviado al hardware USB exitosamente.');
-      }
-    } catch (error) {
-      console.error('❌ No se pudo conectar con el microservicio USB en el puerto 3001:', error);
-    }
-
-    
+    // 👇 Enviar a la impresora térmica USB (funciona desde móvil y PC)
+    await enviarImpresion('/api/imprimir/caja', { orden: venta, esPreCuenta });
   };
 
   const handleSeleccionarOrden = (orden) => {

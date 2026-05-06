@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Send, ChefHat, Clock, DollarSign, ArrowLeft, Receipt, Printer, Utensils, Search, Gift, History } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { enviarImpresion } from '@/utils/printServer';
 import { ordenesService } from '@/services/ordenes.service';
 import { productosService } from '@/services/productos.service';
 import { categoriasService } from '@/services/categorias.service';
@@ -586,17 +587,8 @@ ${detalles.map(d => {
       confirmButtonText: 'Entendido',
       confirmButtonColor: '#16a34a'
     });
-    // 👇 MAGIA FULL STACK: Intentamos enviar a la impresora física 👇
-    try {
-      const response = await fetch('http://localhost:3001/api/imprimir/cocina', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orden, detalles })
-      });
-      if (response.ok) console.log('✅ Impresión de cocina enviada al hardware USB.');
-    } catch (error) {
-      console.info('ℹ️ Modo sin impresora: No se detectó servidor local en puerto 3001.');
-    }
+    // 👇 Enviar a la impresora térmica USB
+    await enviarImpresion('/api/imprimir/cocina', { orden, detalles });
   };
 
   // ✅ IMPRESIÓN CAJA CON D' CAMILOS Y CONEXIÓN AL MICROSERVICIO USB
@@ -638,16 +630,8 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
       confirmButtonText: 'Imprimido'
     });
 
-    try {
-      const response = await fetch('http://localhost:3001/api/imprimir/caja', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orden })
-      });
-      if (response.ok) console.log('✅ Comprobante de caja enviado al hardware USB.');
-    } catch (error) {
-      console.info('ℹ️ Modo sin impresora: No se detectó servidor local en puerto 3001.');
-    }
+    // 👇 Enviar a la impresora térmica USB
+    await enviarImpresion('/api/imprimir/caja', { orden });
   };
 
   const handleUpdateObservacion = (detalleId, texto) => {

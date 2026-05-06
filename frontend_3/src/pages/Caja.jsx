@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Printer, Plus, Minus, DollarSign, CreditCard, Smartphone, ArrowLeft, Filter, Download, Calculator, Wallet, FileText, Unlock } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { cajaService } from '@/services/caja.service';
+import { enviarImpresion } from '@/utils/printServer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -397,17 +398,8 @@ ${cierre.observaciones ? `Obs: ${cierre.observaciones}` : ''}
             width: '450px',
         });
 
-        // 👇 Enviar también a la impresora térmica USB
-        try {
-            await fetch('http://localhost:3001/api/imprimir/reporte-cierre', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cierre }),
-            });
-            console.log('✅ Reporte de cierre enviado al hardware USB.');
-        } catch (_e) {
-            console.info('ℹ️ Modo sin impresora: No se detectó servidor local en puerto 3001.');
-        }
+        // 👇 Enviar a la impresora térmica USB (funciona desde móvil y PC)
+        await enviarImpresion('/api/imprimir/reporte-cierre', { cierre });
     };
 
     const formatMonto = (monto) => `S/ ${parseFloat(monto || 0).toFixed(2)}`;

@@ -4,7 +4,11 @@ const escpos = require('escpos');
 escpos.USB = require('escpos-usb');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: '*',                     // Permite peticiones desde cualquier origen (móviles, PCs en red)
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type'],
+}));
 app.use(express.json());
 
 // ────────────────────────────────────────────────────────────────

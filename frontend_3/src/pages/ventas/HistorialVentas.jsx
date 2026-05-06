@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { enviarImpresion } from '@/utils/printServer';
 
 export const HistorialVentas = () => {
   const queryClient = useQueryClient();
@@ -205,14 +206,10 @@ Vuelto: S/ ${parseFloat(venta.vuelto || 0).toFixed(2)}
         confirmButtonColor: '#22c55e',
       }).then(async (result) => {
         if (result.isConfirmed) {
-          try {
-            await fetch('http://localhost:3001/api/imprimir/reimpresion', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ venta }),
-            });
+          const ok = await enviarImpresion('/api/imprimir/reimpresion', { venta });
+          if (ok) {
             Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: '✅ Enviado a impresora', timer: 2000, showConfirmButton: false });
-          } catch (_e) {
+          } else {
             Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: 'Sin impresora USB detectada', timer: 2500, showConfirmButton: false });
           }
         }
