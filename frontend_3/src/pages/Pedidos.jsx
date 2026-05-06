@@ -599,31 +599,45 @@ ${detalles.map(d => {
     }
   };
 
-  // ✅ IMPRESIÓN CAJA CON NOMBRE CLIENTE (MANTENIENDO IGV)
+  // ✅ IMPRESIÓN CAJA CON D' CAMILOS Y CONEXIÓN AL MICROSERVICIO USB
   const imprimirComprobanteCaja = async (orden) => {
-    const total = orden.detalles.reduce((s, d) => s + parseFloat(d.subtotal), 0);
-    const igv = total * 0.18;
-    const subtotal = total - igv;
+    const detallesFiltrados = (orden.detalles || []).filter(d => !d.es_incluido_menu);
+    const subtotalBruto = detallesFiltrados.reduce((s, d) => s + parseFloat(d.subtotal || 0), 0);
+    const descuento = parseFloat(orden.descuento_total || 0);
+    const totalNeto = Math.max(0, subtotalBruto - descuento);
+    const subtotalSinIgv = totalNeto / 1.18;
+    const igvCalculado = totalNeto - subtotalSinIgv;
+
     const contenido = `
 ══════════════════════════
-   RESTAURANTE XYZ
+      PIZZERÍA
+     D' CAMILOS
    RUC: 20123456789
 ══════════════════════════
 Comanda #${orden.numero_comanda}
 ${orden.nombre_cliente ? `Cliente: ${orden.nombre_cliente}` : `Mesa: ${orden.mesa_numero}`}
 Fecha: ${new Date().toLocaleString()}
 ──────────────────────────
-${orden.detalles.map(d =>
-      `${d.cantidad}x ${d.es_menu ? 'MENÚ - ' : ''}${d.producto_nombre}${d.es_menu && d.entrada_incluida ? ` (incluye ${d.entrada_incluida.nombre})` : ''}\n   S/ ${parseFloat(d.subtotal).toFixed(2)}`
+${detallesFiltrados.map(d =>
+      `${d.cantidad}x ${d.es_menu ? 'MENÚ - ' : ''}${d.producto_nombre}\n   S/ ${parseFloat(d.subtotal).toFixed(2)}`
     ).join('\n')}
 ──────────────────────────
-SUBTOTAL:    S/ ${subtotal.toFixed(2)}
-IGV (18%):   S/ ${igv.toFixed(2)}
-TOTAL:       S/ ${total.toFixed(2)}
+SUBTOTAL BRUTO: S/ ${subtotalBruto.toFixed(2)}
+${descuento > 0 ? `DESCUENTO:    - S/ ${descuento.toFixed(2)}\n` : ''}──────────────────────────
+OP. GRAVADA:   S/ ${subtotalSinIgv.toFixed(2)}
+IGV (18%):     S/ ${igvCalculado.toFixed(2)}
+TOTAL:         S/ ${totalNeto.toFixed(2)}
 ══════════════════════════
+   ¡Gracias por su compra!
     `.trim();
+
     console.log('🖨️ COMPROBANTE CAJA:\n', contenido);
-    Swal.fire({ title: '🧾 Comprobante', html: `<pre style="text-align:left;font-family:monospace;font-size:12px;">${contenido}</pre>`, confirmButtonText: 'Imprimido' });
+    Swal.fire({
+      title: '🧾 Comprobante',
+      html: `<pre style="text-align:left;font-family:monospace;font-size:12px;">${contenido}</pre>`,
+      confirmButtonText: 'Imprimido'
+    });
+
     try {
       const response = await fetch('http://localhost:3001/api/imprimir/caja', {
         method: 'POST',

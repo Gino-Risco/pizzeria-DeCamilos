@@ -159,47 +159,62 @@ export const HistorialVentas = () => {
     try {
       Swal.fire({ title: 'Generando ticket...', didOpen: () => Swal.showLoading() });
 
-      // Obtenemos la data completa incluyendo detalles
       const venta = await ventasService.getById(id);
 
-      // Reutilizamos el formato de ticket que ya conoces
-      const identificador = venta.mesa_id ? `Mesa: ${venta.mesa_numero}` : `CLIENTE: ${venta.nombre_cliente || 'Para Llevar'}`;
+      const identificador = venta.mesa_id
+        ? `Mesa: ${venta.mesa_numero}`
+        : `CLIENTE: ${venta.nombre_cliente || 'Para Llevar'}`;
+
+      const detallesFiltrados = (venta.detalles || []).filter(d => !d.es_incluido_menu);
+      const subtotalBruto = parseFloat(venta.subtotal || 0);
+      const descuento     = parseFloat(venta.descuento || 0);
+      const totalNeto     = parseFloat(venta.total || 0);
 
       const contenido = `
 ══════════════════════════
-   RESTAURANTE XYZ
+      PIZZERÍA
+     D' CAMILOS
    RUC: 20123456789
 ══════════════════════════
   *** COPIA DE TICKET ***
-TICKET #${venta.id}
+TICKET #${venta.numero_ticket || venta.id}
 ${identificador}
 Fecha: ${new Date(venta.created_at).toLocaleString()}
 ──────────────────────────
-${venta.detalles?.map(d =>
-        `${d.cantidad}x ${d.producto_nombre}\n   S/ ${parseFloat(d.precio * d.cantidad).toFixed(2)}`
+${detallesFiltrados.map(d =>
+        `${d.cantidad}x ${d.producto_nombre}\n   S/ ${parseFloat(d.subtotal || (d.precio * d.cantidad) || 0).toFixed(2)}`
       ).join('\n')}
 ──────────────────────────
-SUBTOTAL:      S/ ${parseFloat(venta.subtotal).toFixed(2)}
-DESCUENTO:    - S/ ${parseFloat(venta.descuento).toFixed(2)}
-──────────────────────────
-TOTAL:         S/ ${parseFloat(venta.total).toFixed(2)}
+SUBTOTAL:      S/ ${subtotalBruto.toFixed(2)}
+${descuento > 0 ? `DESCUENTO:    - S/ ${descuento.toFixed(2)}\n` : ''}──────────────────────────
+TOTAL:         S/ ${totalNeto.toFixed(2)}
 ──────────────────────────
 Método: ${venta.metodo_pago?.toUpperCase()}
 Pagado: S/ ${parseFloat(venta.monto_pagado || 0).toFixed(2)}
 Vuelto: S/ ${parseFloat(venta.vuelto || 0).toFixed(2)}
 ══════════════════════════
+   ¡Gracias por su compra!
       `.trim();
 
       Swal.fire({
         title: '🧾 Reimpresión de Ticket',
         html: `<pre style="text-align:left;font-family:monospace;font-size:12px;white-space:pre-wrap;">${contenido}</pre>`,
-        confirmButtonText: '🖨️ Imprimir',
+        confirmButtonText: '🖨️ Imprimir en Térmica',
         showCancelButton: true,
-        cancelButtonText: 'Cerrar'
-      }).then((result) => {
+        cancelButtonText: 'Cerrar',
+        confirmButtonColor: '#22c55e',
+      }).then(async (result) => {
         if (result.isConfirmed) {
-          // Aquí invocarías a tu lógica de envío a impresora térmica si la tienes
-          window.print();
+          try {
+            await fetch('http://localhost:3001/api/imprimir/reimpresion', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ venta }),
+            });
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: '✅ Enviado a impresora', timer: 2000, showConfirmButton: false });
+          } catch (_e) {
+            Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: 'Sin impresora USB detectada', timer: 2500, showConfirmButton: false });
+          }
         }
       });
     } catch (error) {

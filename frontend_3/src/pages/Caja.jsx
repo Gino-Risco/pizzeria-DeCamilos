@@ -331,7 +331,7 @@ const VistaDashboard = ({ onVolver }) => {
         window.print();
     };
 
-    const imprimirReporteCierre = (cierre) => {
+    const imprimirReporteCierre = async (cierre) => {
         const fondo = parseFloat(cierre.monto_inicial || 0);
         const ventasGlobales = parseFloat(cierre.total_ventas || 0);
         const ventasEfectivo = parseFloat(cierre.total_efectivo || 0);
@@ -396,6 +396,18 @@ ${cierre.observaciones ? `Obs: ${cierre.observaciones}` : ''}
             confirmButtonText: '✓ Entendido',
             width: '450px',
         });
+
+        // 👇 Enviar también a la impresora térmica USB
+        try {
+            await fetch('http://localhost:3001/api/imprimir/reporte-cierre', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cierre }),
+            });
+            console.log('✅ Reporte de cierre enviado al hardware USB.');
+        } catch (_e) {
+            console.info('ℹ️ Modo sin impresora: No se detectó servidor local en puerto 3001.');
+        }
     };
 
     const formatMonto = (monto) => `S/ ${parseFloat(monto || 0).toFixed(2)}`;
