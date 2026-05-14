@@ -409,6 +409,8 @@ export const Pedidos = () => {
 
   const filteredProductos = productos?.filter((prod) => {
     if (prod.tipo === 'insumo') return false;
+    const catLower = prod.categoria_nombre?.toLowerCase() || '';
+  
     const matchesSearch = prod.nombre.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategoria = filterCategoria === 'todos' || (prod.categoria_nombre?.trim().toLowerCase() === filterCategoria.trim().toLowerCase());
     return matchesSearch && matchesCategoria;
@@ -655,11 +657,11 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
     const opcionesParaModal = empaquesDisponibles.length > 0
       ? empaquesDisponibles
       : [
-          // Fallback: opciones hardcodeadas hasta que se creen los productos en BD
-          { id: '__taper_s', nombre: 'Taper Chico (Alitas 4 pzas)', precio_venta: 1.00, _esTemporal: true },
-          { id: '__taper_m', nombre: 'Taper Grande (Alitas 6 pzas)', precio_venta: 1.50, _esTemporal: true },
-          { id: '__vaso',    nombre: 'Vaso Descartable (Jugo)',       precio_venta: 0.50, _esTemporal: true },
-        ];
+        // Fallback: opciones hardcodeadas hasta que se creen los productos en BD
+        { id: '__taper_s', nombre: 'Taper Chico (Alitas 4 pzas)', precio_venta: 1.00, _esTemporal: true },
+        { id: '__taper_m', nombre: 'Taper Grande (Alitas 6 pzas)', precio_venta: 1.50, _esTemporal: true },
+        { id: '__vaso', nombre: 'Vaso Descartable (Jugo)', precio_venta: 0.50, _esTemporal: true },
+      ];
 
     // Usamos una Promise para comunicar la selección fuera del HTML de Swal
     const seleccion = await new Promise((resolve) => {

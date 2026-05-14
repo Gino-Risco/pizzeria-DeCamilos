@@ -186,6 +186,7 @@ async function getCompraById(id) {
 }
 
 async function createCompra(data, usuario_id) {
+  console.log("DATOS RECIBIDOS EN EL BACKEND:", data.metodo_pago);
   const {
     proveedor_id,
     fecha_emision,
@@ -195,9 +196,10 @@ async function createCompra(data, usuario_id) {
     igv,
     detalles,
     observaciones,
-    metodo_pago
+    metodo_pago // 'efectivo', 'transferencia', 'tarjeta', 'yape', 'credito'
   } = data;
 
+  // Si no especifican, asumimos que es efectivo de la caja chica
   const metodoPagoFinal = metodo_pago || 'efectivo';
 
   const usuario = await query(
@@ -248,14 +250,14 @@ async function createCompra(data, usuario_id) {
   try {
     await client.query('BEGIN');
 
-    // 1. Verificar Caja si es Efectivo
+    // 1. Verificar Caja SOLO SI es una compra en Efectivo (Caja Chica)
     let idCaja = null;
     if (metodoPagoFinal === 'efectivo') {
       const cajaAbierta = await client.query(
         `SELECT id FROM pos.caja_aperturas WHERE estado = 'abierta' AND activo = TRUE LIMIT 1`
       );
       if (cajaAbierta.rows.length === 0) {
-        throw AppError.badRequest('Debe abrir caja antes de registrar compras en efectivo.');
+        throw AppError.badRequest('Debe abrir caja para registrar compras en efectivo. (Si es una compra grande, seleccione Transferencia o Tarjeta)');
       }
       idCaja = cajaAbierta.rows[0].id;
     }
@@ -275,7 +277,7 @@ async function createCompra(data, usuario_id) {
     );
     const compra = compraResult.rows[0];
 
-    // 3. Registrar el Egreso en Caja (si aplica)
+    // 3. Registrar el Egreso en Caja SOLO SI fue en Efectivo
     if (metodoPagoFinal === 'efectivo' && idCaja) {
       const descPago = `Pago Compra #${compra.id} - ${proveedorNombre}`;
       const egresoCaja = await client.query(
@@ -291,9 +293,8 @@ async function createCompra(data, usuario_id) {
       );
     }
 
-    // 4. Guardar Detalles y ACTUALIZAR COSTO PROMEDIO
+    // 4. Guardar Detalles y ACTUALIZAR COSTO PROMEDIO (Para todas las compras)
     for (const detalle of detalles) {
-      // a. LEER EL STOCK ANTES DE INSERTAR (Para que el Trigger no nos gane)
       const prodRes = await client.query(
         `SELECT stock_actual, costo_promedio FROM ${TABLE.PRODUCTOS} WHERE id = $1`,
         [detalle.producto_id]
@@ -305,13 +306,11 @@ async function createCompra(data, usuario_id) {
       const cantComprada = parseFloat(detalle.cantidad);
       const precioCompra = parseFloat(detalle.costo_unitario);
 
-      // b. FÓRMULA DEL COSTO PROMEDIO PONDERADO
       let nuevoCostoPromedio = precioCompra;
       if (stockAnterior > 0) {
         nuevoCostoPromedio = ((stockAnterior * costoAnterior) + (cantComprada * precioCompra)) / (stockAnterior + cantComprada);
       }
 
-      // c. INSERTAR EL DETALLE (Aquí el Trigger de PostgreSQL suma el stock real)
       await client.query(
         `INSERT INTO ${TABLE.COMPRAS_DETALLE} 
          (compra_id, producto_id, cantidad, costo_unitario, activo)
@@ -319,7 +318,6 @@ async function createCompra(data, usuario_id) {
         [compra.id, detalle.producto_id, detalle.cantidad, detalle.costo_unitario]
       );
 
-      // d. ACTUALIZAR SOLO EL COSTO PROMEDIO
       await client.query(
         `UPDATE ${TABLE.PRODUCTOS} 
          SET costo_promedio = $1, updated_at = NOW() 
@@ -327,7 +325,6 @@ async function createCompra(data, usuario_id) {
         [nuevoCostoPromedio, detalle.producto_id]
       );
     }
-
 
     await client.query('COMMIT');
     return await getCompraById(compra.id);

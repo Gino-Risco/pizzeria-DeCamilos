@@ -46,7 +46,7 @@ const getCompraById = catchAsync(async (req, res) => {
 });
 
 const createCompra = catchAsync(async (req, res) => {
-  // 1. Agregamos los nuevos campos en la desestructuración
+  // 1. Agregamos el nuevo campo en la desestructuración
   const {
     proveedor_id,
     fecha_emision,
@@ -55,7 +55,8 @@ const createCompra = catchAsync(async (req, res) => {
     numero_comprobante,
     igv,
     detalles,
-    observaciones
+    observaciones,
+    metodo_pago // <--- ¡AQUÍ ESTÁ LA MAGIA!
   } = req.body;
 
   if (!proveedor_id || !detalles || !Array.isArray(detalles)) {
@@ -72,7 +73,7 @@ const createCompra = catchAsync(async (req, res) => {
     }
   }
 
-  // 2. Pasamos todo el objeto completo al servicio
+  // 2. Pasamos el objeto completo (incluyendo metodo_pago) al servicio
   const compra = await comprasService.createCompra(
     {
       proveedor_id,
@@ -82,9 +83,10 @@ const createCompra = catchAsync(async (req, res) => {
       numero_comprobante,
       igv,
       detalles,
-      observaciones
+      observaciones,
+      metodo_pago // <--- ¡Y AQUÍ SE LO PASAMOS AL SERVICIO!
     },
-    req.user.id 
+    req.user.id
   );
 
   res.status(201).json({

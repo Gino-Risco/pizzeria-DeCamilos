@@ -3,7 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 // 1. IMPORTAMOS EL COMPONENTE DE IA AQUÍ 👇
-import { CopilotoIA } from '../ia/CopilotoIA'; 
+// import { CopilotoIA } from '../ia/CopilotoIA'; 
 
 export const DashboardLayout = () => {
   // Estado para controlar si el menú está abierto en el celular
@@ -34,7 +34,7 @@ export const DashboardLayout = () => {
       </div>
 
       {/* 2. INYECTAMOS EL ROBOT AQUÍ, AL FINAL 👇 */}
-      <CopilotoIA />
+      {/* <CopilotoIA /> */}
 
     </div>
   );

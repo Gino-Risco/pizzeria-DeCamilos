@@ -1,12 +1,80 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, Search, ChevronDown } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { comprasService } from '@/services/compras.service';
 import api from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+// NUEVO COMPONENTE: Buscador Inteligente de Productos
+const BuscadorProducto = ({ productos, valor, onChange }) => {
+    const [busqueda, setBusqueda] = useState('');
+    const [abierto, setAbierto] = useState(false);
+
+    // Buscar el producto seleccionado
+    const productoSeleccionado = productos.find(p => p.id.toString() === valor.toString());
+
+    // Filtrar la lista según lo que escriba el usuario
+    const productosFiltrados = productos.filter(p =>
+        p.nombre.toLowerCase().includes(busqueda.toLowerCase())
+    );
+
+    return (
+        <div className="relative w-full">
+            <div
+                className="flex items-center justify-between w-full px-3 py-2 bg-white border border-gray-300 rounded-md focus-within:ring-2 focus-within:ring-blue-500 cursor-text"
+                onClick={() => setAbierto(true)}
+            >
+                <div className="flex items-center flex-1 overflow-hidden gap-2">
+                    {abierto ? <Search className="h-4 w-4 text-gray-400 shrink-0" /> : null}
+                    {abierto ? (
+                        <input
+                            type="text"
+                            className="w-full outline-none bg-transparent text-sm"
+                            placeholder="Escribe para buscar..."
+                            value={busqueda}
+                            onChange={(e) => setBusqueda(e.target.value)}
+                            autoFocus
+                            onBlur={() => setTimeout(() => setAbierto(false), 200)}
+                        />
+                    ) : (
+                        <span className={`text-sm truncate ${productoSeleccionado ? "text-gray-900" : "text-gray-500"}`}>
+                            {productoSeleccionado ? `${productoSeleccionado.nombre} (${productoSeleccionado.unidad_medida || 'unidad'})` : "Seleccionar producto..."}
+                        </span>
+                    )}
+                </div>
+                {!abierto && <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />}
+            </div>
+
+            {abierto && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    {productosFiltrados.length > 0 ? (
+                        productosFiltrados.map(p => (
+                            <div
+                                key={p.id}
+                                className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-gray-50 last:border-0"
+                                onMouseDown={(e) => {
+                                    // onMouseDown previene que el onBlur del input se dispare antes
+                                    e.preventDefault();
+                                    onChange(p.id.toString());
+                                    setBusqueda('');
+                                    setAbierto(false);
+                                }}
+                            >
+                                <span className="font-medium text-gray-800">{p.nombre}</span>
+                                <span className="text-gray-500 text-xs ml-1">({p.unidad_medida || 'unidad'})</span>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="px-3 py-3 text-sm text-gray-500 text-center">No se encontraron productos</div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export const CompraCrear = () => {
     const navigate = useNavigate();
@@ -18,12 +86,12 @@ export const CompraCrear = () => {
     const [serieComprobante, setSerieComprobante] = useState('');
     const [numeroComprobante, setNumeroComprobante] = useState('');
     const [aplicarIgv, setAplicarIgv] = useState(false);
-    
+
     // 👇 1. NUEVO ESTADO PARA EL MÉTODO DE PAGO 👇
-    const [metodoPago, setMetodoPago] = useState('efectivo'); 
+    const [metodoPago, setMetodoPago] = useState('efectivo');
 
     const [observaciones, setObservaciones] = useState('');
-    const [productos, setProductos] = useState([{ producto_id: '', cantidad: '', costo_unitario: '' }]);
+    const [productos, setProductos] = useState([{ producto_id: '', cantidad: '', costo_unitario: '', costo_total: '' }]);
     const [proveedores, setProveedores] = useState([]);
     const [productosDisponibles, setProductosDisponibles] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -75,10 +143,30 @@ export const CompraCrear = () => {
         }
     };
 
-    const actualizarProducto = (index, field, value) => {
-        const nuevos = [...productos];
-        nuevos[index][field] = value;
-        setProductos(nuevos);
+    const actualizarProducto = (index, campo, valor) => {
+        const nuevosProductos = [...productos];
+        nuevosProductos[index][campo] = valor;
+
+        const cantidad = parseFloat(nuevosProductos[index].cantidad);
+
+        // Si el usuario escribe el precio total del paquete...
+        if (campo === 'costo_total' && cantidad > 0) {
+            const costoTotal = parseFloat(valor);
+            if (!isNaN(costoTotal)) {
+                // ...calculamos el unitario automáticamente con 4 decimales
+                nuevosProductos[index].costo_unitario = (costoTotal / cantidad).toFixed(4);
+            }
+        }
+        // Si el usuario escribe el costo unitario o cambia la cantidad...
+        else if ((campo === 'costo_unitario' || campo === 'cantidad') && cantidad > 0) {
+            const costoUnitario = parseFloat(nuevosProductos[index].costo_unitario);
+            if (!isNaN(costoUnitario)) {
+                // ...calculamos el total automáticamente
+                nuevosProductos[index].costo_total = (cantidad * costoUnitario).toFixed(2);
+            }
+        }
+
+        setProductos(nuevosProductos);
     };
 
     const calcularSubtotal = (p) => {
@@ -111,10 +199,10 @@ export const CompraCrear = () => {
                 tipo_comprobante: tipoComprobante,
                 serie_comprobante: serieComprobante || null,
                 numero_comprobante: numeroComprobante || null,
-                igv: igvCalculado, 
+                igv: igvCalculado,
                 observaciones,
                 // 👇 2. ENVIAMOS EL MÉTODO DE PAGO AL BACKEND 👇
-                metodo_pago: metodoPago, 
+                metodo_pago: metodoPago,
                 detalles: detalles.map(d => ({
                     producto_id: parseInt(d.producto_id),
                     cantidad: parseFloat(d.cantidad),
@@ -236,7 +324,8 @@ export const CompraCrear = () => {
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 bg-white"
                             >
                                 <option value="efectivo">💵 Efectivo (Descuenta de Caja)</option>
-                                <option value="transferencia">🏦 Transferencia Bancaria</option>
+                                <option value="efectivo_externo">💰 Efectivo Externo (Dinero del Dueño / No toca caja)</option>
+                                <option value="transferencia">🏦 Transferencia / Yape / Plin</option>
                                 <option value="credito">⏳ Crédito (Por pagar)</option>
                             </select>
                             {metodoPago === 'efectivo' && (
@@ -270,23 +359,19 @@ export const CompraCrear = () => {
                     <div className="space-y-3">
                         {productos.map((producto, index) => (
                             <div key={index} className="grid grid-cols-12 gap-3 items-end p-3 bg-gray-50 rounded-lg border border-gray-100">
-                                <div className="col-span-5">
-                                    <label className="block text-sm font-medium mb-1 text-gray-700">Producto</label>
-                                    <select
-                                        value={producto.producto_id}
-                                        onChange={(e) => actualizarProducto(index, 'producto_id', e.target.value)}
-                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-                                    >
-                                        <option value="">Seleccionar producto</option>
-                                        {productosDisponibles.map(p => (
-                                            <option key={p.id} value={p.id}>
-                                                {p.nombre} ({p.unidad_medida || 'unidad'})
-                                            </option>
-                                        ))}
-                                    </select>
+                                {/* Producto (Reducido a col-span-3) */}
+                                <div className="col-span-3">
+                                    <label className="block text-xs font-medium mb-1 text-gray-700">Producto</label>
+                                    <BuscadorProducto
+                                        productos={productosDisponibles}
+                                        valor={producto.producto_id}
+                                        onChange={(valor) => actualizarProducto(index, 'producto_id', valor)}
+                                    />
                                 </div>
+
+                                {/* Cantidad (col-span-2) */}
                                 <div className="col-span-2">
-                                    <label className="block text-sm font-medium mb-1 text-gray-700">Cantidad</label>
+                                    <label className="block text-xs font-medium mb-1 text-gray-700">Cantidad</label>
                                     <Input
                                         type="number"
                                         step="0.01"
@@ -296,8 +381,10 @@ export const CompraCrear = () => {
                                         className="bg-white"
                                     />
                                 </div>
+
+                                {/* Costo Unitario (col-span-2) */}
                                 <div className="col-span-2">
-                                    <label className="block text-sm font-medium mb-1 text-gray-700">Costo Unit.</label>
+                                    <label className="block text-xs font-medium mb-1 text-gray-700">Costo Unit.</label>
                                     <Input
                                         type="number"
                                         step="0.01"
@@ -307,12 +394,30 @@ export const CompraCrear = () => {
                                         className="bg-white"
                                     />
                                 </div>
+
+                                {/* NUEVO: Costo Total del Paquete (col-span-2) */}
                                 <div className="col-span-2">
-                                    <label className="block text-sm font-medium mb-1 text-gray-700">Subtotal</label>
-                                    <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-md font-semibold text-gray-700">
+                                    <label className="block text-xs font-medium mb-1 text-blue-700">Costo Paquete</label>
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={producto.costo_total || ''}
+                                        onChange={(e) => actualizarProducto(index, 'costo_total', e.target.value)}
+                                        placeholder="0.00"
+                                        className="bg-blue-50 border-blue-200 focus:bg-white"
+                                        title="Escribe lo que costó todo el paquete (Ej: S/ 12.00)"
+                                    />
+                                </div>
+
+                                {/* Subtotal Informativo (col-span-2) */}
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-medium mb-1 text-gray-700">Subtotal</label>
+                                    <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-md font-semibold text-gray-700 truncate">
                                         S/ {calcularSubtotal(producto).toFixed(2)}
                                     </div>
                                 </div>
+
+                                {/* Botón Eliminar (col-span-1) */}
                                 <div className="col-span-1 flex justify-center pb-1">
                                     <Button
                                         variant="ghost"

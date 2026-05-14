@@ -132,6 +132,20 @@ const getUltimasOrdenesActivas = catchAsync(async (req, res) => {
   res.json({ success: true, data: { ordenes: data } });
 });
 
+/**
+ * GET /api/reportes/rentabilidad
+ */
+const getRentabilidadPorPeriodo = catchAsync(async (req, res) => {
+  const { fecha_desde, fecha_hasta, agrupar_por = 'dia' } = req.query;
+
+  if (!fecha_desde || !fecha_hasta) {
+    throw AppError.badRequest('fecha_desde y fecha_hasta son requeridos');
+  }
+
+  const reporte = await reportesService.getRentabilidadPorPeriodo(fecha_desde, fecha_hasta, agrupar_por);
+  res.json({ success: true, data: { reporte } });
+});
+
 
 
 module.exports = {
@@ -147,5 +161,6 @@ module.exports = {
   getVentasPorHora,
   getVentasPorMetodoPagoHoy,
   getTopProductosHoy,
-  getUltimasOrdenesActivas
+  getUltimasOrdenesActivas,
+  getRentabilidadPorPeriodo
 };

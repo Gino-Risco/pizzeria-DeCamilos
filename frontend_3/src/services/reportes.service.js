@@ -106,4 +106,16 @@ export const reportesService = {
     });
     return response.data.data.ordenes;
   },
+
+  // Añade esto al final, antes de cerrar la llave del export
+  async getRentabilidad(fechaDesde, fechaHasta, agruparPor = 'dia') {
+    const response = await api.get('/reportes/rentabilidad', {
+      params: { 
+        fecha_desde: fechaDesde, 
+        fecha_hasta: fechaHasta, 
+        agrupar_por: agruparPor 
+      },
+    });
+    return response.data.data.reporte;
+  },
 };

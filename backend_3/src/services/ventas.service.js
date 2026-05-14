@@ -270,13 +270,33 @@ async function crearVenta(data, usuario_id) {
         const venta = ventaResult.rows[0];
 
         // 2. Crear detalles de venta
+        const ID_GASEOSA_LITRO_Y_MEDIO = 53;
+
         for (const detalle of detallesOrden.rows) {
+            // a. Primero insertamos el producto original (sea lo que sea que pidieron)
             await client.query(
                 `INSERT INTO ${TABLE.VENTAS_DETALLE} 
-         (venta_id, producto_id, cantidad, precio, es_incluido_menu, activo)
-         VALUES ($1, $2, $3, $4, $5, TRUE)`,
+                 (venta_id, producto_id, cantidad, precio, es_incluido_menu, activo)
+                 VALUES ($1, $2, $3, $4, $5, TRUE)`,
                 [venta.id, detalle.producto_id, detalle.cantidad, detalle.precio, detalle.es_incluido_menu]
             );
+
+            // b. Limpiamos el nombre (por si el cajero dejó espacios) y lo pasamos a minúsculas
+            const nombreExacto = detalle.producto_nombre.toLowerCase().trim();
+
+            // c. REGLA ESTRICTA: Solo si el nombre contiene exactamente estas frases
+            if (nombreExacto.includes('combo 1 pizzas') ||
+                nombreExacto.includes('combo 2 pizzas') ||
+                nombreExacto.includes('combo 3 pizzas')) {
+
+                // Insertamos silenciosamente la Gaseosa 1.5L a precio S/ 0.00
+                await client.query(
+                    `INSERT INTO ${TABLE.VENTAS_DETALLE} 
+                     (venta_id, producto_id, cantidad, precio, es_incluido_menu, activo)
+                     VALUES ($1, $2, $3, $4, $5, TRUE)`,
+                    [venta.id, ID_GASEOSA_LITRO_Y_MEDIO, detalle.cantidad, 0, true]
+                );
+            }
         }
 
         // 3. AÑADIDO: Registrar movimiento(s) en caja según el tipo de pago
@@ -446,9 +466,9 @@ async function getTicketData(id) {
 }
 
 async function getTopVentas(caja_id, limite = 3) {
-  // Eliminamos el $1 porque no tenemos columna caja_id clara aún
-  const result = await query(
-    `SELECT p.nombre, SUM(vd.cantidad) as total_vendido
+    // Eliminamos el $1 porque no tenemos columna caja_id clara aún
+    const result = await query(
+        `SELECT p.nombre, SUM(vd.cantidad) as total_vendido
      FROM pos.ventas_detalle vd
      JOIN inventario.productos p ON p.id = vd.producto_id
      JOIN pos.ventas v ON v.id = vd.venta_id
@@ -458,9 +478,9 @@ async function getTopVentas(caja_id, limite = 3) {
      GROUP BY p.id, p.nombre
      ORDER BY total_vendido DESC
      LIMIT $1`, // Ahora el límite es $1
-    [limite] // Solo pasamos un parámetro
-  );
-  return result.rows;
+        [limite] // Solo pasamos un parámetro
+    );
+    return result.rows;
 }
 
 module.exports = {

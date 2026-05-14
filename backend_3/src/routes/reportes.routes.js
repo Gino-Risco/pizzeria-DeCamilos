@@ -52,4 +52,7 @@ router.get('/dashboard/top-productos', reportesController.getTopProductosHoy);
 // GET /api/reportes/dashboard/ordenes-activas - Últimas órdenes (todos los roles)
 router.get('/dashboard/ordenes-activas', reportesController.getUltimasOrdenesActivas);
 
+
+router.get('/rentabilidad', reportesController.getRentabilidadPorPeriodo);
+
 module.exports = router;

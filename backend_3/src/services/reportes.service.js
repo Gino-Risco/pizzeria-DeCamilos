@@ -413,6 +413,63 @@ async function getUltimasOrdenesActivas(limite = 5) {
     total: parseFloat(row.total_cobrable) // Nuevo campo: Monto acumulado
   }));
 }
+
+/**
+ * NUEVA FUNCIÓN: Obtener Rentabilidad (Ganancia Neta) por Periodo
+ */
+async function getRentabilidadPorPeriodo(fecha_desde, fecha_hasta, agrupar_por = 'dia') {
+  let fechaFormat = '';
+
+  switch (agrupar_por) {
+    case 'dia':
+      fechaFormat = "DATE_TRUNC('day', v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')";
+      break;
+    case 'semana':
+      fechaFormat = "DATE_TRUNC('week', v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')";
+      break;
+    case 'mes':
+      fechaFormat = "DATE_TRUNC('month', v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')";
+      break;
+    default:
+      fechaFormat = "DATE_TRUNC('day', v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')";
+  }
+
+  const result = await query(
+    `SELECT 
+        ${fechaFormat}::date AS periodo,
+        -- INGRESOS: Lo que pagó el cliente
+        COALESCE(SUM(vd.cantidad * vd.precio), 0) AS ingresos_brutos,
+        
+        -- COSTOS: Lo que nos costó (Cantidad vendida * Costo Promedio actual)
+        COALESCE(SUM(vd.cantidad * p.costo_promedio), 0) AS costo_insumos,
+        
+        -- GANANCIA: Ingresos - Costos
+        COALESCE(SUM(vd.cantidad * vd.precio), 0) - COALESCE(SUM(vd.cantidad * p.costo_promedio), 0) AS ganancia_neta,
+        
+        -- MARGEN: (Ganancia / Ingresos) * 100
+        CASE 
+          WHEN COALESCE(SUM(vd.cantidad * vd.precio), 0) = 0 THEN 0
+          ELSE ROUND(
+            ((COALESCE(SUM(vd.cantidad * vd.precio), 0) - COALESCE(SUM(vd.cantidad * p.costo_promedio), 0)) / 
+            COALESCE(SUM(vd.cantidad * vd.precio), 0) * 100), 2
+          )
+        END AS margen_porcentaje
+        
+     FROM pos.ventas_detalle vd
+     JOIN pos.ventas v ON v.id = vd.venta_id
+     JOIN inventario.productos p ON p.id = vd.producto_id
+     WHERE (v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date >= $1::date 
+       AND (v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date <= $2::date
+       AND v.activo = TRUE
+       AND vd.activo = TRUE
+     GROUP BY ${fechaFormat}
+     ORDER BY periodo ASC`,
+    [fecha_desde, fecha_hasta]
+  );
+
+  return result.rows;
+}
+
 module.exports = {
   getVentasPorPeriodo,
   getProductosMasVendidos,
@@ -426,5 +483,7 @@ module.exports = {
   getVentasPorHora,
   getVentasPorMetodoPagoHoy,
   getTopProductosHoy,
-  getUltimasOrdenesActivas
+  getUltimasOrdenesActivas,
+  getRentabilidadPorPeriodo
+
 };
