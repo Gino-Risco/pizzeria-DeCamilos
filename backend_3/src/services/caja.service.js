@@ -88,12 +88,15 @@ async function abrirCaja(data, usuario_id) {
 
     const caja = result.rows[0];
 
-    await client.query(
-      `INSERT INTO ${TABLE.CAJA_MOVIMIENTOS}
-       (caja_id, tipo, descripcion, monto, usuario_id, activo)
-       VALUES ($1, 'apertura', 'Apertura de caja', $2, $3, TRUE)`,
-      [caja.id, monto_inicial, usuario_id]
-    );
+    // Solo insertamos el movimiento de dinero si el monto inicial es mayor a 0
+    if (parseFloat(monto_inicial) > 0) {
+      await client.query(
+        `INSERT INTO ${TABLE.CAJA_MOVIMIENTOS}
+         (caja_id, tipo, descripcion, monto, usuario_id, activo)
+         VALUES ($1, 'apertura', 'Apertura de caja', $2, $3, TRUE)`,
+        [caja.id, monto_inicial, usuario_id]
+      );
+    }
 
     await client.query('COMMIT');
     return await obtenerCajaPorId(caja.id);
@@ -415,7 +418,7 @@ async function getResumenDelDia(caja_id) {
   cards.total.monto = Object.values(cards)
     .filter(c => c.label !== 'Total')
     .reduce((s, c) => s + c.monto, 0);
-    
+
   cards.total.ventas = parseInt(totalVentasUnicas.rows[0]?.total_ventas, 10) || 0;
 
   const ingresoRow = movimientosEfectivo.rows.find(m => m.tipo === 'ingreso');
@@ -456,13 +459,13 @@ async function getMovimientosDelDia(caja_id, filtros = {}) {
   }
 
   if (fecha_desde) {
-    conditions.push(`cm.created_at >= $${paramIndex}`);
+    conditions.push(`(cm.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date >= $${paramIndex}::date`);
     params.push(fecha_desde);
     paramIndex++;
   }
 
   if (fecha_hasta) {
-    conditions.push(`cm.created_at <= $${paramIndex}`);
+    conditions.push(`(cm.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date <= $${paramIndex}::date`);
     params.push(fecha_hasta);
     paramIndex++;
   }

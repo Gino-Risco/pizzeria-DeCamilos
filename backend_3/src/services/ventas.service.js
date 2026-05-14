@@ -66,13 +66,13 @@ async function getAllVentas(filtros = {}) {
     }
 
     if (fecha_desde) {
-        conditions.push(`v.created_at >= $${paramIndex}`);
+        conditions.push(`(v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date >= $${paramIndex}::date`);
         params.push(fecha_desde);
         paramIndex++;
     }
 
     if (fecha_hasta) {
-        conditions.push(`v.created_at <= $${paramIndex}`);
+        conditions.push(`(v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date <= $${paramIndex}::date`);
         params.push(fecha_hasta);
         paramIndex++;
     }
@@ -171,6 +171,15 @@ async function crearVenta(data, usuario_id) {
 
     if (!['cajero', 'administrador'].includes(usuario.rows[0].rol)) {
         throw AppError.forbidden('Solo cajeros pueden crear ventas');
+    }
+
+    // Verificar que haya una caja abierta
+    const cajaAbierta = await query(
+        `SELECT id FROM ${TABLE.CAJA_APERTURAS} WHERE estado = 'abierta' AND activo = TRUE LIMIT 1`,
+        []
+    );
+    if (cajaAbierta.rows.length === 0) {
+        throw AppError.conflict('No hay caja abierta. Debe abrir la caja antes de realizar ventas.');
     }
 
     // ✅ CORRECCIÓN: LEFT JOIN para incluir órdenes Para Llevar (mesa_id = null)

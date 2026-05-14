@@ -186,7 +186,6 @@ async function getCompraById(id) {
 }
 
 async function createCompra(data, usuario_id) {
-  console.log("DATOS RECIBIDOS EN EL BACKEND:", data.metodo_pago);
   const {
     proveedor_id,
     fecha_emision,
@@ -196,7 +195,7 @@ async function createCompra(data, usuario_id) {
     igv,
     detalles,
     observaciones,
-    metodo_pago // 'efectivo', 'transferencia', 'tarjeta', 'yape', 'credito'
+    metodo_pago 
   } = data;
 
   // Si no especifican, asumimos que es efectivo de la caja chica
