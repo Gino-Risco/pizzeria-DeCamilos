@@ -109,6 +109,7 @@ export const CategoriaForm = ({ categoria, onSave, onCancel, isLoading }) => {
           <option value="fondo">Plato Principal / Bebida (se vende)</option>
           <option value="entrada">Entrada / Piqueo (se vende)</option>
           <option value="insumo">Insumo (solo almacén, no se vende)</option>
+          <option value="empacado">Empacado / Bebida (solo almacén, se vende)</option>
         </select>
         <p className="text-xs text-gray-400 mt-1">
           Usa «Plato Principal» para Pizzas, Combos, Bebidas, A la Carta.

@@ -1,4 +1,4 @@
-﻿import { Users } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MesaStatus } from './MesaStatus';
 
@@ -60,6 +60,21 @@ export const MesaCard = ({ mesa, onClick, onNuevaOrden, isLoading }) => {
           className="mt-4 w-full py-2 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
         >
           {isLoading ? 'Creando...' : 'Nueva Orden'}
+        </button>
+      )}
+
+      {estado === 'reservada' && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onNuevaOrden) {
+              onNuevaOrden(mesa);
+            }
+          }}
+          disabled={isLoading}
+          className="mt-4 w-full py-2 px-4 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+        >
+          {isLoading ? 'Creando...' : 'Tomar Orden'}
         </button>
       )}
 

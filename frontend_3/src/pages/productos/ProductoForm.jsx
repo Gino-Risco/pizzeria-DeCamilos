@@ -109,21 +109,15 @@ export const ProductoForm = ({ modo }) => {
     setFormData(prev => {
       const newData = { ...prev, [name]: type === 'checkbox' ? checked : value };
       if (name === 'tipo') {
-        if (value === 'insumo' || value === 'empacado') {
+        if (value === 'insumo') {
           newData.control_stock = true;
           newData.disponible_en_menu = false;
+        } else if (value === 'empacado') {
+          newData.control_stock = true;
+          newData.disponible_en_menu = true;
         } else if (value === 'fondo' || value === 'entrada' || value === 'preparado') {
           newData.control_stock = false;
           newData.disponible_en_menu = true;
-        }
-      }
-      // Si se selecciona una categoría de tipo 'insumo', forzar configuración de almacén
-      if (name === 'categoria_id') {
-        const selectedCat = categorias?.find(c => c.id === parseInt(value));
-        if (selectedCat?.tipo === 'insumo') {
-          newData.tipo = 'insumo';
-          newData.control_stock = true;
-          newData.disponible_en_menu = false;
         }
       }
       return newData;

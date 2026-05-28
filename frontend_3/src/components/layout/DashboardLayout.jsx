@@ -2,12 +2,24 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
-// 1. IMPORTAMOS EL COMPONENTE DE IA AQUÍ 👇
-// import { CopilotoIA } from '../ia/CopilotoIA'; 
 
 export const DashboardLayout = () => {
   // Estado para controlar si el menú está abierto en el celular
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Estado para controlar si el menú está colapsado en la PC
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebar_collapsed');
+    return saved === 'true';
+  });
+
+  const handleToggleCollapse = () => {
+    setIsCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -20,22 +32,28 @@ export const DashboardLayout = () => {
       )}
 
       {/* Le pasamos el estado al Sidebar */}
-      <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+      <Sidebar 
+        isOpen={sidebarOpen} 
+        setIsOpen={setSidebarOpen} 
+        isCollapsed={isCollapsed}
+        onToggleCollapse={handleToggleCollapse}
+      />
       
-      {/* Contenedor principal: en pantallas grandes (lg) deja un margen a la izquierda de 64 (256px) */}
-      <div className="lg:pl-64 flex flex-col min-h-screen">
-        {/* Le pasamos la función al Navbar para que el botón de hamburguesa pueda abrir el menú */}
-        <Navbar onMenuClick={() => setSidebarOpen(true)} />
-        
-        {/* En móviles los márgenes son más pequeños (p-4), en PC más grandes (p-6) */}
-        <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">
-          <Outlet />
-        </main>
+      {/* Contenedor principal: en pantallas grandes (lg) deja un margen a la izquierda dinámico y fluido de forma flotante */}
+      <div className={`flex transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-[96px]' : 'lg:pl-[272px]'} min-h-screen lg:h-screen`}>
+        {/* Tarjeta flotante de altura fija: Navbar fijo arriba + contenido scrollable abajo */}
+        <div className="flex flex-col flex-1 lg:my-3 lg:mr-3 lg:bg-white lg:rounded-2xl lg:border lg:border-gray-200/80 lg:shadow-lg lg:shadow-slate-900/5 overflow-hidden">
+          {/* Navbar fijo en la cima de la tarjeta (no scrollea) */}
+          <div className="shrink-0">
+            <Navbar onMenuClick={() => setSidebarOpen(true)} />
+          </div>
+          
+          {/* Solo el contenido de la página scrollea dentro de la tarjeta */}
+          <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 lg:p-6">
+            <Outlet />
+          </main>
+        </div>
       </div>
-
-      {/* 2. INYECTAMOS EL ROBOT AQUÍ, AL FINAL 👇 */}
-      {/* <CopilotoIA /> */}
-
     </div>
   );
 };

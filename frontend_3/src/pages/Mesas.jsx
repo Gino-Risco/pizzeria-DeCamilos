@@ -158,8 +158,8 @@ export const Mesas = () => {
 
   const handleNuevaOrden = (mesa) => {
     console.log('🔔 handleNuevaOrden llamado - Mesa:', mesa);
-    if (mesa.estado !== 'libre') {
-      toast.warning('Solo se puede crear orden en mesas libres');
+    if (mesa.estado !== 'libre' && mesa.estado !== 'reservada') {
+      toast.warning('Solo se puede crear orden en mesas libres o reservadas');
       return;
     }
     console.log('✅ Creando orden...');

@@ -1,24 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Send, ChefHat, Clock, DollarSign, ArrowLeft, Receipt, Printer, Utensils, Search, Gift, History } from 'lucide-react';
+import { Trash2, ChefHat, Send, DollarSign, ArrowLeft, Receipt, Plus, History } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { enviarImpresion } from '@/utils/printServer';
 import { ordenesService } from '@/services/ordenes.service';
 import { productosService } from '@/services/productos.service';
 import { categoriasService } from '@/services/categorias.service';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
+
+// Componentes modulares
+import { PizzaSizeDialog } from '@/components/pedidos/PizzaSizeDialog';
+import { ProductGrid } from '@/components/pedidos/ProductGrid';
+import { OrderCart } from '@/components/pedidos/OrderCart';
+import { OrderItemsTable } from '@/components/pedidos/OrderItemsTable';
 
 export const Pedidos = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -29,6 +26,7 @@ export const Pedidos = () => {
   const user = { rol: 'administrador' };
   const isAdminOCajero = user?.rol === 'administrador' || user?.rol === 'cajero';
 
+  // --- ESTADOS LOCALES ---
   const [selectedProductos, setSelectedProductos] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategoria, setFilterCategoria] = useState('todos');
@@ -39,7 +37,8 @@ export const Pedidos = () => {
     setSelectedProductos([]);
   }, [ordenId]);
 
-  const { data: orden, isLoading: ordenLoading, refetch: refetchOrden } = useQuery({
+  // --- DATA FETCHING (REACT QUERY) ---
+  const { data: orden, isLoading: ordenLoading } = useQuery({
     queryKey: ['orden', ordenId],
     queryFn: async () => {
       const data = await ordenesService.getById(ordenId);
@@ -69,12 +68,9 @@ export const Pedidos = () => {
     },
   });
 
-  // Query separada para empaques/descartables: los trae aunque sean tipo "insumo"
-  // porque el endpoint principal los puede filtrar del panel de venta
   const { data: productosEmpaques } = useQuery({
     queryKey: ['productos', 'empaques'],
     queryFn: async () => {
-      // Trae TODOS los productos activos sin importar tipo, para poder encontrar empaques
       const data = await productosService.getAll({ activo: true });
       return data
         .filter(p => {
@@ -95,8 +91,8 @@ export const Pedidos = () => {
     queryFn: async () => await categoriasService.getAll(),
   });
 
-  // Emojis por nombre de categoría (se puede ampliar libremente)
-  const getCategoriaEmoji = (nombre) => {
+  // --- HELPER DE EMOJIS ---
+  const getCategoriaEmoji = useCallback((nombre) => {
     const nombreLower = nombre.toLowerCase();
     if (nombreLower.includes('pizza')) return '🍕';
     if (nombreLower.includes('combo')) return '🍗';
@@ -108,23 +104,51 @@ export const Pedidos = () => {
     if (nombreLower.includes('ensalada')) return '🥗';
     if (nombreLower.includes('pasta') || nombreLower.includes('tallar')) return '🍝';
     if (nombreLower.includes('mariscos') || nombreLower.includes('ceviche')) return '🦐';
-    return '🍴'; // emoji genérico para cualquier categoría nueva
-  };
+    return '🍴';
+  }, []);
 
-  // Botones de filtro dinámicos: "Todos" + categorías vendibles (excluye tipo insumo)
-  const categoriasFiltro = [
-    { value: 'todos', label: 'Todos', icon: '📋' },
-    ...(categoriasDB
-      ?.filter(cat => cat.tipo !== 'insumo') // Los insumos son de almacén, no se venden
-      .map(cat => ({
-        value: cat.nombre,
-        label: cat.nombre,
-        icon: getCategoriaEmoji(cat.nombre),
-      })) || []),
-  ];
+  // --- FILTROS Y CATEGORÍAS (MEMORIZADOS) ---
+  const categoriasFiltro = useMemo(() => {
+    return [
+      { value: 'todos', label: 'Todos', icon: '📋' },
+      ...(categoriasDB
+        ?.filter(cat => cat.tipo !== 'insumo')
+        .map(cat => ({
+          value: cat.nombre,
+          label: cat.nombre,
+          icon: getCategoriaEmoji(cat.nombre),
+        })) || []),
+    ];
+  }, [categoriasDB, getCategoriaEmoji]);
 
+  const filteredProductos = useMemo(() => {
+    return productos?.filter((prod) => {
+      if (prod.tipo === 'insumo') return false;
+      const matchesSearch = prod.nombre.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategoria = filterCategoria === 'todos' || (prod.categoria_nombre?.trim().toLowerCase() === filterCategoria.trim().toLowerCase());
+      return matchesSearch && matchesCategoria;
+    });
+  }, [productos, searchTerm, filterCategoria]);
 
+  const productosMostrar = useMemo(() => {
+    const resultado = [];
+    const grupoPizzas = {};
+    (filteredProductos || []).forEach((prod) => {
+      if (prod.categoria_nombre !== 'Pizzas') {
+        resultado.push(prod);
+      } else {
+        const nombreBase = prod.nombre.split(' - ')[0];
+        if (!grupoPizzas[nombreBase]) {
+          grupoPizzas[nombreBase] = { nombreBase, variantes: [], categoria_nombre: 'Pizzas', _key: nombreBase };
+          resultado.push(grupoPizzas[nombreBase]);
+        }
+        grupoPizzas[nombreBase].variantes.push(prod);
+      }
+    });
+    return resultado;
+  }, [filteredProductos]);
 
+  // --- MUTACIONES (REACT QUERY) ---
   const agregarDetalleMutation = useMutation({
     mutationFn: async (detalles) => {
       return await ordenesService.agregarDetalles(ordenId, detalles);
@@ -139,7 +163,6 @@ export const Pedidos = () => {
     },
   });
 
-  // ✅ AQUÍ ESTÁ LA LÓGICA NUEVA DE NOMBRE CLIENTE EN EL POPUP
   const crearOrdenMutation = useMutation({
     mutationFn: async (tipo = 'llevar') => {
       const { value: nombreCliente, isConfirmed } = await Swal.fire({
@@ -175,12 +198,12 @@ export const Pedidos = () => {
       return await ordenesService.create({
         tipo_pedido: tipo,
         mesa_id: null,
-        nombre_cliente: nombreCliente, // SE ENVÍA EL NOMBRE
+        nombre_cliente: nombreCliente,
         observaciones: 'Pedido rápido para llevar'
       });
     },
     onSuccess: (nuevaOrden) => {
-      if (!nuevaOrden) return; // Si canceló el modal
+      if (!nuevaOrden) return;
       queryClient.invalidateQueries(['ordenes']);
       setSearchParams({ orden_id: nuevaOrden.id });
       Swal.fire({ icon: 'success', title: `Pedido de ${nuevaOrden.nombre_cliente || 'Llevar'} creado`, timer: 1500, showConfirmButton: false });
@@ -203,12 +226,11 @@ export const Pedidos = () => {
     },
   });
 
-  // Mutación para anular un plato (Cortesía)
   const aplicarCortesiaMutation = useMutation({
     mutationFn: async ({ ordenId, detalleId, motivo }) => {
       return await ordenesService.aplicarCortesia(ordenId, detalleId, motivo);
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries(['orden', ordenId]);
       Swal.fire({
         icon: 'success',
@@ -264,25 +286,15 @@ export const Pedidos = () => {
     },
   });
 
-  // 👇 NUEVA MUTACIÓN PARA ANULAR ORDEN 👇
   const anularOrdenMutation = useMutation({
-    // NOTA: Verifica que en tu frontend ordenes.service.js exista un método llamado 'cancelar' o 'anular'
     mutationFn: async ({ id, motivo }) => {
-      // Ajusta 'ordenesService.cancelar' al nombre exacto que tengas en tu frontend service
       return await ordenesService.cancelar(id, { motivo });
     },
     onSuccess: (data) => {
-      // 1. Borramos esta orden de la memoria de React Query para evitar el error 404
       queryClient.removeQueries(['orden', ordenId]);
-
-      // 2. Refrescamos la lista de mesas y órdenes generales
       queryClient.invalidateQueries(['ordenes']);
       queryClient.invalidateQueries(['mesas']);
-
-      // 3. ¡MUY IMPORTANTE! Sacamos al usuario de la vista ANTES del modal
       setSearchParams({});
-
-      // 4. Mostramos el mensaje de éxito que viene del backend
       Swal.fire({
         icon: 'success',
         title: '¡Mesa Liberada!',
@@ -290,8 +302,6 @@ export const Pedidos = () => {
         timer: 2500,
         showConfirmButton: false
       });
-
-      // Sacamos al usuario de esta vista y lo regresamos a la lista
       setSearchParams({});
     },
     onError: (error) => {
@@ -316,8 +326,201 @@ export const Pedidos = () => {
     }
   });
 
-  const handleAplicarDescuento = async () => {
-    // Calculamos el subtotal actual de la orden
+  // --- IMPRESIÓN ---
+  const imprimirTicketCocina = useCallback(async (orden, detalles) => {
+    const esLlevar = !orden.mesa_id;
+    const contenido = `
+══════════════════════════════════
+${esLlevar ? `🛍️ PARA LLEVAR: ${orden.nombre_cliente || 'SIN NOMBRE'}` : `🍳 COCINA - Mesa ${orden.mesa_numero}`}
+#${orden.numero_comanda} - ${new Date().toLocaleTimeString()}
+──────────────────────────────────
+${detalles.map(d => {
+      let linea = `${d.cantidad}x ${d.es_menu ? 'MENÚ: ' : ''}${d.producto_nombre}`;
+      if (d.es_menu && d.entrada_incluida) linea += `\n   → Entrada: ${d.entrada_incluida.nombre}`;
+      if (d.observaciones && d.observaciones.trim() !== "") linea += `\n   ⚠️ NOTA: ${d.observaciones.toUpperCase()}`;
+      return linea;
+    }).join('\n──────────────────────────────────\n')}
+    `.trim();
+
+    console.log('🖨️ TICKET COCINA:\n', contenido);
+    Swal.fire({
+      title: '🖨️ Ticket Enviado a Cocina',
+      html: `<pre style="text-align:left;font-family:monospace;font-size:14px;background:#fdfdfd;padding:10px;border:1px solid #eee;">${contenido}</pre>`,
+      confirmButtonText: 'Entendido',
+      confirmButtonColor: '#16a34a'
+    });
+    await enviarImpresion('/api/imprimir/cocina', { orden, detalles });
+  }, []);
+
+  const imprimirComprobanteCaja = useCallback(async (orden) => {
+    const detallesFiltrados = (orden.detalles || []).filter(d => !d.es_incluido_menu);
+    const subtotalBruto = detallesFiltrados.reduce((s, d) => s + parseFloat(d.subtotal || 0), 0);
+    const descuento = parseFloat(orden.descuento_total || 0);
+    const totalNeto = Math.max(0, subtotalBruto - descuento);
+    const subtotalSinIgv = totalNeto / 1.18;
+    const igvCalculado = totalNeto - subtotalSinIgv;
+
+    const contenido = `
+══════════════════════════
+      PIZZERÍA
+     D' CAMILOS
+   RUC: 20123456789
+══════════════════════════
+Comanda #${orden.numero_comanda}
+${orden.nombre_cliente ? `Cliente: ${orden.nombre_cliente}` : `Mesa: ${orden.mesa_numero}`}
+Fecha: ${new Date().toLocaleString()}
+──────────────────────────
+${detallesFiltrados.map(d =>
+      `${d.cantidad}x ${d.es_menu ? 'MENÚ - ' : ''}${d.producto_nombre}\n   S/ ${parseFloat(d.subtotal).toFixed(2)}`
+    ).join('\n')}
+──────────────────────────
+SUBTOTAL BRUTO: S/ ${subtotalBruto.toFixed(2)}
+${descuento > 0 ? `DESCUENTO:    - S/ ${descuento.toFixed(2)}\n` : ''}──────────────────────────
+OP. GRAVADA:   S/ ${subtotalSinIgv.toFixed(2)}
+IGV (18%):     S/ ${igvCalculado.toFixed(2)}
+TOTAL:         S/ ${totalNeto.toFixed(2)}
+══════════════════════════
+   ¡Gracias por su compra!
+    `.trim();
+
+    console.log('🖨️ COMPROBANTE CAJA:\n', contenido);
+    Swal.fire({
+      title: '🧾 Comprobante',
+      html: `<pre style="text-align:left;font-family:monospace;font-size:12px;">${contenido}</pre>`,
+      confirmButtonText: 'Imprimido'
+    });
+    await enviarImpresion('/api/imprimir/caja', { orden });
+  }, []);
+
+  // --- HANDLERS DE NEGOCIO (MEMORIZADOS CON USECALLBACK) ---
+  const handleAgregarProducto = useCallback((producto) => {
+    if (producto.variantes) {
+      setPizzaSeleccionada(producto);
+      return;
+    }
+    agregarAlCarritoIndividual(producto);
+  }, []);
+
+  const agregarAlCarritoIndividual = useCallback((producto) => {
+    setSelectedProductos((prev) => {
+      const existing = prev.find(p => p.producto_id === producto.id && !p.es_menu);
+      if (existing) {
+        return prev.map(p => p.producto_id === producto.id && !p.es_menu ? { ...p, cantidad: p.cantidad + 1 } : p);
+      }
+      return [...prev, {
+        producto_id: producto.id,
+        cantidad: 1,
+        precio: producto.precio_venta,
+        es_menu: false,
+        entrada_incluida: null,
+        fondo_incluido: null,
+      }];
+    });
+  }, []);
+
+  const handleRemoverProducto = useCallback((productoId) => {
+    setSelectedProductos((prev) => prev.filter(p => p.producto_id !== productoId));
+  }, []);
+
+  const handleActualizarCantidad = useCallback((productoId, nuevaCantidad) => {
+    if (nuevaCantidad < 1) {
+      handleRemoverProducto(productoId);
+      return;
+    }
+    setSelectedProductos((prev) => prev.map(p =>
+      p.producto_id === productoId ? { ...p, cantidad: nuevaCantidad } : p
+    ));
+  }, [handleRemoverProducto]);
+
+  const handleGuardarOrden = useCallback(() => {
+    if (selectedProductos.length === 0) {
+      Swal.fire({ icon: 'warning', title: 'Sin productos', text: 'Agrega al menos un producto' });
+      return;
+    }
+    agregarDetalleMutation.mutate(selectedProductos);
+  }, [selectedProductos, agregarDetalleMutation]);
+
+  const handleEliminarDetalle = useCallback(async (detalleId) => {
+    const result = await Swal.fire({
+      title: '¿Eliminar producto?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+    });
+    if (result.isConfirmed) {
+      eliminarDetalleMutation.mutate({ ordenId, detalleId });
+    }
+  }, [ordenId, eliminarDetalleMutation]);
+
+  const handleCortesia = useCallback(async (detalleId) => {
+    const { value: motivo } = await Swal.fire({
+      title: 'Anular Plato (Cortesía)',
+      text: 'El plato se mantendrá en el registro con valor S/ 0.00. Ingresa el motivo:',
+      input: 'text',
+      inputPlaceholder: 'Ej: Mosca en la sopa, pollo crudo, cliente canceló...',
+      showCancelButton: true,
+      confirmButtonColor: '#f97316',
+      confirmButtonText: 'Anular Plato',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (motivo) {
+      aplicarCortesiaMutation.mutate({ ordenId, detalleId, motivo });
+    }
+  }, [ordenId, aplicarCortesiaMutation]);
+
+  const handleEnviarCocina = useCallback(() => {
+    const pendientes = orden?.detalles?.filter(d => !d.enviado_cocina) || [];
+    if (pendientes.length === 0) {
+      Swal.fire({ icon: 'info', title: 'Sin pendientes', text: 'Todos los items ya fueron enviados' });
+      return;
+    }
+    enviarCocinaMutation.mutate(observaciones);
+  }, [orden, observaciones, enviarCocinaMutation]);
+
+  const handleCobrar = useCallback(async () => {
+    if (!orden?.detalles?.length) {
+      Swal.fire({ icon: 'warning', title: 'Orden vacía', text: 'No hay productos para cobrar' });
+      return;
+    }
+    const { value: formValues } = await Swal.fire({
+      title: 'Cobrar Orden',
+      html: `
+        <div style="text-align: left;">
+          <p><strong>Total:</strong> S/ ${orden.detalles.reduce((s, d) => s + parseFloat(d.subtotal), 0).toFixed(2)}</p>
+          <label>Método de pago:</label>
+          <select id="metodo_pago" class="swal2-input" style="width: 100%; margin: 8px 0;">
+            <option value="efectivo">Efectivo</option>
+            <option value="tarjeta">Tarjeta</option>
+            <option value="yape">Yape/Plin</option>
+          </select>
+          <label>N° Comprobante (opcional):</label>
+          <input id="numero_comprobante" class="swal2-input" placeholder="B001-000123" style="width: 100%;">
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Cobrar',
+      cancelButtonText: 'Cancelar',
+      preConfirm: () => ({
+        metodo_pago: document.getElementById('metodo_pago').value,
+        numero_comprobante: document.getElementById('numero_comprobante').value,
+      }),
+    });
+    if (formValues) {
+      const total = orden.detalles.reduce((sum, d) => sum + parseFloat(d.subtotal), 0);
+      cerrarOrdenMutation.mutate({ total, metodo_pago: formValues.metodo_pago, numero_comprobante: formValues.numero_comprobante });
+    }
+  }, [orden, cerrarOrdenMutation]);
+
+  const handleUpdateObservacion = useCallback((detalleId, texto) => {
+    setObservaciones(prev => ({ ...prev, [detalleId]: texto }));
+  }, []);
+
+  const handleAplicarDescuento = useCallback(async () => {
     const totalActual = orden.detalles?.reduce((s, d) => s + parseFloat(d.subtotal), 0) || 0;
 
     const { value: formValues } = await Swal.fire({
@@ -369,9 +572,9 @@ export const Pedidos = () => {
         ...formValues
       });
     }
-  };
+  }, [orden, ordenId, aplicarDescuentoMutation]);
 
-  const handleAnularOrden = async () => {
+  const handleAnularOrden = useCallback(async () => {
     const { value: formValues } = await Swal.fire({
       title: '⚠️ ¿Anular Orden?',
       html: `
@@ -405,247 +608,15 @@ export const Pedidos = () => {
         motivo: formValues.motivo
       });
     }
-  };
+  }, [ordenId, anularOrdenMutation]);
 
-  const filteredProductos = productos?.filter((prod) => {
-    if (prod.tipo === 'insumo') return false;
-    const catLower = prod.categoria_nombre?.toLowerCase() || '';
-  
-    const matchesSearch = prod.nombre.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategoria = filterCategoria === 'todos' || (prod.categoria_nombre?.trim().toLowerCase() === filterCategoria.trim().toLowerCase());
-    return matchesSearch && matchesCategoria;
-  });
-
-
-
-  // Agrupa las pizzas por nombre base; el resto de productos se añaden tal cual
-  const productosMostrar = (() => {
-    const resultado = [];
-    const grupoPizzas = {};
-    (filteredProductos || []).forEach((prod) => {
-      if (prod.categoria_nombre !== 'Pizzas') {
-        resultado.push(prod);
-      } else {
-        const nombreBase = prod.nombre.split(' - ')[0];
-        if (!grupoPizzas[nombreBase]) {
-          grupoPizzas[nombreBase] = { nombreBase, variantes: [], categoria_nombre: 'Pizzas', _key: nombreBase };
-          resultado.push(grupoPizzas[nombreBase]);
-        }
-        grupoPizzas[nombreBase].variantes.push(prod);
-      }
-    });
-    return resultado;
-  })();
-
-  const agregarAlCarritoIndividual = (producto) => {
-    setSelectedProductos((prev) => {
-      const existing = prev.find(p => p.producto_id === producto.id && !p.es_menu);
-      if (existing) {
-        return prev.map(p => p.producto_id === producto.id && !p.es_menu ? { ...p, cantidad: p.cantidad + 1 } : p);
-      }
-      return [...prev, {
-        producto_id: producto.id,
-        cantidad: 1,
-        precio: producto.precio_venta,
-        es_menu: false,
-        entrada_incluida: null,
-        fondo_incluido: null,
-      }];
-    });
-  };
-
-  const handleAgregarProducto = (producto) => {
-    if (producto.variantes) {
-      // Es un grupo de pizzas: abrir modal de tamaños
-      setPizzaSeleccionada(producto);
-      return;
-    }
-    agregarAlCarritoIndividual(producto);
-  };
-
-  const handleRemoverProducto = (productoId) => {
-    setSelectedProductos((prev) => prev.filter(p => p.producto_id !== productoId));
-  };
-
-  const handleActualizarCantidad = (productoId, nuevaCantidad) => {
-    if (nuevaCantidad < 1) {
-      handleRemoverProducto(productoId);
-      return;
-    }
-    setSelectedProductos((prev) => prev.map(p =>
-      p.producto_id === productoId ? { ...p, cantidad: nuevaCantidad } : p
-    ));
-  };
-
-  const handleGuardarOrden = () => {
-    if (selectedProductos.length === 0) {
-      Swal.fire({ icon: 'warning', title: 'Sin productos', text: 'Agrega al menos un producto' });
-      return;
-    }
-    agregarDetalleMutation.mutate(selectedProductos);
-  };
-
-  const handleEliminarDetalle = async (detalleId) => {
-    const result = await Swal.fire({
-      title: '¿Eliminar producto?',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#ef4444',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Sí, eliminar',
-      cancelButtonText: 'Cancelar',
-    });
-    if (result.isConfirmed) {
-      eliminarDetalleMutation.mutate({ ordenId, detalleId });
-    }
-  };
-
-  // Función que se ejecuta al darle clic al botón
-  const handleCortesia = async (detalleId) => {
-    const { value: motivo } = await Swal.fire({
-      title: 'Anular Plato (Cortesía)',
-      text: 'El plato se mantendrá en el registro con valor S/ 0.00. Ingresa el motivo:',
-      input: 'text',
-      inputPlaceholder: 'Ej: Mosca en la sopa, pollo crudo, cliente canceló...',
-      showCancelButton: true,
-      confirmButtonColor: '#f97316',
-      confirmButtonText: 'Anular Plato',
-      cancelButtonText: 'Cancelar'
-    });
-
-    if (motivo) {
-      aplicarCortesiaMutation.mutate({ ordenId, detalleId, motivo });
-    }
-  };
-
-  const handleEnviarCocina = () => {
-    const pendientes = orden?.detalles?.filter(d => !d.enviado_cocina) || [];
-    if (pendientes.length === 0) {
-      Swal.fire({ icon: 'info', title: 'Sin pendientes', text: 'Todos los items ya fueron enviados' });
-      return;
-    }
-    enviarCocinaMutation.mutate(observaciones);
-  };
-
-  const handleCobrar = async () => {
-    if (!orden?.detalles?.length) {
-      Swal.fire({ icon: 'warning', title: 'Orden vacía', text: 'No hay productos para cobrar' });
-      return;
-    }
-    const { value: formValues } = await Swal.fire({
-      title: 'Cobrar Orden',
-      html: `
-        <div style="text-align: left;">
-          <p><strong>Total:</strong> S/ ${orden.detalles.reduce((s, d) => s + parseFloat(d.subtotal), 0).toFixed(2)}</p>
-          <label>Método de pago:</label>
-          <select id="metodo_pago" class="swal2-input" style="width: 100%; margin: 8px 0;">
-            <option value="efectivo">Efectivo</option>
-            <option value="tarjeta">Tarjeta</option>
-            <option value="yape">Yape/Plin</option>
-          </select>
-          <label>N° Comprobante (opcional):</label>
-          <input id="numero_comprobante" class="swal2-input" placeholder="B001-000123" style="width: 100%;">
-        </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Cobrar',
-      cancelButtonText: 'Cancelar',
-      preConfirm: () => ({
-        metodo_pago: document.getElementById('metodo_pago').value,
-        numero_comprobante: document.getElementById('numero_comprobante').value,
-      }),
-    });
-    if (formValues) {
-      const total = orden.detalles.reduce((sum, d) => sum + parseFloat(d.subtotal), 0);
-      cerrarOrdenMutation.mutate({ total, metodo_pago: formValues.metodo_pago, numero_comprobante: formValues.numero_comprobante });
-    }
-  };
-
-
-
-  const totalCarrito = selectedProductos.reduce((sum, p) => sum + parseFloat(p.precio) * p.cantidad, 0);
-
-  // ✅ IMPRESIÓN COCINA CON NOMBRE CLIENTE
-  const imprimirTicketCocina = async (orden, detalles) => {
-    const esLlevar = !orden.mesa_id;
-    const contenido = `
-══════════════════════════════════
-${esLlevar ? `🛍️ PARA LLEVAR: ${orden.nombre_cliente || 'SIN NOMBRE'}` : `🍳 COCINA - Mesa ${orden.mesa_numero}`}
-#${orden.numero_comanda} - ${new Date().toLocaleTimeString()}
-──────────────────────────────────
-${detalles.map(d => {
-      let linea = `${d.cantidad}x ${d.es_menu ? 'MENÚ: ' : ''}${d.producto_nombre}`;
-      if (d.es_menu && d.entrada_incluida) linea += `\n   → Entrada: ${d.entrada_incluida.nombre}`;
-      if (d.observaciones && d.observaciones.trim() !== "") linea += `\n   ⚠️ NOTA: ${d.observaciones.toUpperCase()}`;
-      return linea;
-    }).join('\n──────────────────────────────────\n')}
-    `.trim();
-
-    console.log('🖨️ TICKET COCINA:\n', contenido);
-    Swal.fire({
-      title: '🖨️ Ticket Enviado a Cocina',
-      html: `<pre style="text-align:left;font-family:monospace;font-size:14px;background:#fdfdfd;padding:10px;border:1px solid #eee;">${contenido}</pre>`,
-      confirmButtonText: 'Entendido',
-      confirmButtonColor: '#16a34a'
-    });
-    // 👇 Enviar a la impresora térmica USB
-    await enviarImpresion('/api/imprimir/cocina', { orden, detalles });
-  };
-
-  // ✅ IMPRESIÓN CAJA CON D' CAMILOS Y CONEXIÓN AL MICROSERVICIO USB
-  const imprimirComprobanteCaja = async (orden) => {
-    const detallesFiltrados = (orden.detalles || []).filter(d => !d.es_incluido_menu);
-    const subtotalBruto = detallesFiltrados.reduce((s, d) => s + parseFloat(d.subtotal || 0), 0);
-    const descuento = parseFloat(orden.descuento_total || 0);
-    const totalNeto = Math.max(0, subtotalBruto - descuento);
-    const subtotalSinIgv = totalNeto / 1.18;
-    const igvCalculado = totalNeto - subtotalSinIgv;
-
-    const contenido = `
-══════════════════════════
-      PIZZERÍA
-     D' CAMILOS
-   RUC: 20123456789
-══════════════════════════
-Comanda #${orden.numero_comanda}
-${orden.nombre_cliente ? `Cliente: ${orden.nombre_cliente}` : `Mesa: ${orden.mesa_numero}`}
-Fecha: ${new Date().toLocaleString()}
-──────────────────────────
-${detallesFiltrados.map(d =>
-      `${d.cantidad}x ${d.es_menu ? 'MENÚ - ' : ''}${d.producto_nombre}\n   S/ ${parseFloat(d.subtotal).toFixed(2)}`
-    ).join('\n')}
-──────────────────────────
-SUBTOTAL BRUTO: S/ ${subtotalBruto.toFixed(2)}
-${descuento > 0 ? `DESCUENTO:    - S/ ${descuento.toFixed(2)}\n` : ''}──────────────────────────
-OP. GRAVADA:   S/ ${subtotalSinIgv.toFixed(2)}
-IGV (18%):     S/ ${igvCalculado.toFixed(2)}
-TOTAL:         S/ ${totalNeto.toFixed(2)}
-══════════════════════════
-   ¡Gracias por su compra!
-    `.trim();
-
-    console.log('🖨️ COMPROBANTE CAJA:\n', contenido);
-    Swal.fire({
-      title: '🧾 Comprobante',
-      html: `<pre style="text-align:left;font-family:monospace;font-size:12px;">${contenido}</pre>`,
-      confirmButtonText: 'Imprimido'
-    });
-
-    // 👇 Enviar a la impresora térmica USB
-    await enviarImpresion('/api/imprimir/caja', { orden });
-  };
-
-  const handleUpdateObservacion = (detalleId, texto) => {
-    setObservaciones(prev => ({ ...prev, [detalleId]: texto }));
-  };
-
-  // ── LÓGICA DE EMPAQUES / DESCARTABLES ──
-  // Solo es true cuando hay una orden abierta Y es para llevar (sin mesa)
+  // --- MANEJO DE EMPAQUES / DESCARTABLES ---
   const esOrdenParaLlevar = !!ordenId && !!orden && !orden.mesa_id;
+  const totalCarrito = useMemo(() => {
+    return selectedProductos.reduce((sum, p) => sum + parseFloat(p.precio) * p.cantidad, 0);
+  }, [selectedProductos]);
 
-  const handleAgregarEmpaque = async () => {
-    // Usa la query dedicada de empaques (incluye insumos de categoría Empaques/Descartables)
+  const handleAgregarEmpaque = useCallback(async () => {
     const empaquesDisponibles = (productosEmpaques || []).map(p => ({
       ...p,
       precio_venta: parseFloat(p.precio_venta) > 0
@@ -653,25 +624,20 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
         : parseFloat(p.costo_promedio) || 0,
     }));
 
-    // Construimos las filas de opciones como React state local para el modal
     const opcionesParaModal = empaquesDisponibles.length > 0
       ? empaquesDisponibles
       : [
-        // Fallback: opciones hardcodeadas hasta que se creen los productos en BD
         { id: '__taper_s', nombre: 'Taper Chico (Alitas 4 pzas)', precio_venta: 1.00, _esTemporal: true },
         { id: '__taper_m', nombre: 'Taper Grande (Alitas 6 pzas)', precio_venta: 1.50, _esTemporal: true },
         { id: '__vaso', nombre: 'Vaso Descartable (Jugo)', precio_venta: 0.50, _esTemporal: true },
       ];
 
-    // Usamos una Promise para comunicar la selección fuera del HTML de Swal
     const seleccion = await new Promise((resolve) => {
-      // Guardamos callbacks en un Map para evitar globals
       const callbackMap = {};
       opcionesParaModal.forEach((emp) => {
         callbackMap[emp.id] = emp;
       });
 
-      // Exponemos solo lo mínimo necesario
       window.__empaqueResolve = resolve;
       window.__empaqueOpciones = callbackMap;
 
@@ -724,15 +690,12 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
       });
     });
 
-    // Limpiamos los globals
     delete window.__empaqueResolve;
     delete window.__empaqueOpciones;
 
     if (!seleccion) return;
 
     if (seleccion._esTemporal) {
-      // Es un item del fallback: agregamos como ítem genérico con precio_venta
-      // Se trata como producto sin id real: lo sumamos como item especial al carrito
       setSelectedProductos(prev => {
         const existing = prev.find(p => p.producto_id === seleccion.id);
         if (existing) {
@@ -745,7 +708,7 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
           es_menu: false,
           entrada_incluida: null,
           fondo_incluido: null,
-          _nombreTemporal: seleccion.nombre, // Para mostrarlo en el carrito
+          _nombreTemporal: seleccion.nombre,
           _esTemporal: true,
         }];
       });
@@ -756,7 +719,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
         showConfirmButton: false, timer: 3000,
       });
     } else {
-      // Producto real de la BD: usamos el flujo normal
       const productoDB = productos.find(p => p.id === seleccion.id);
       if (productoDB) {
         agregarAlCarritoIndividual(productoDB);
@@ -767,12 +729,9 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
         });
       }
     }
-  };
+  }, [productos, productosEmpaques, agregarAlCarritoIndividual]);
 
-  // ========================================
-  // RENDERIZADO
-  // ========================================
-
+  // --- COMPORTAMIENTOS DE RENDER ---
   if (ordenLoading || ordenesLoading || productosLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -781,12 +740,11 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
     );
   }
 
-  // ── VISTA: Lista de órdenes ──
+  // ── VISTA: Lista de órdenes (Dashboard Principal) ──
   if (!ordenId) {
     return (
       <div className="space-y-4">
-
-        {/* ── HEADER MÓVIL ── */}
+        {/* Header Móvil */}
         <div className="md:hidden">
           <div className="flex items-center justify-between mb-1">
             <div>
@@ -812,7 +770,7 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
           </div>
         </div>
 
-        {/* ── HEADER DESKTOP ── */}
+        {/* Header Desktop */}
         <div className="hidden md:flex md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Pedidos</h1>
@@ -838,7 +796,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
           </div>
         </div>
 
-        {/* ── LISTA VACÍA ── */}
         {ordenes?.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
@@ -855,7 +812,7 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
           </Card>
         ) : (
           <>
-            {/* ── TARJETAS DESKTOP ── */}
+            {/* Tarjetas Desktop */}
             <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {ordenes?.map((orden) => {
                 const esLlevar = !orden.mesa_id;
@@ -867,7 +824,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
                   >
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between">
-                        {/* ✅ NOMBRE CLIENTE AQUI */}
                         <span>{esLlevar ? `🛍️ ${orden.nombre_cliente || 'Para Llevar'}` : `Orden #${orden.numero_comanda?.split('-')[2] || orden.id}`}</span>
                         <Badge variant={esLlevar ? 'outline' : 'default'} className={esLlevar ? 'border-orange-500 text-orange-600' : ''}>
                           {orden.estado}
@@ -877,7 +833,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
                     <CardContent className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">{esLlevar ? 'Cliente:' : 'Mesa:'}</span>
-                        {/* ✅ NOMBRE CLIENTE AQUI */}
                         <span className="font-semibold">{esLlevar ? (orden.nombre_cliente || 'Para Llevar') : orden.mesa_numero}</span>
                       </div>
                       <div className="flex justify-between text-sm">
@@ -899,7 +854,7 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
               })}
             </div>
 
-            {/* ── TARJETAS MÓVIL ── */}
+            {/* Tarjetas Móvil */}
             <div className="flex flex-col gap-3 md:hidden">
               {ordenes?.map((orden) => {
                 const esLlevar = !orden.mesa_id;
@@ -914,7 +869,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
                       <div className="flex items-center gap-2">
                         <span className="text-lg">{esLlevar ? '🛍️' : '🍽️'}</span>
                         <div>
-                          {/* ✅ NOMBRE CLIENTE AQUI */}
                           <p className={`font-bold text-[15px] ${esLlevar ? 'text-orange-700' : 'text-blue-700'}`}>
                             {esLlevar ? (orden.nombre_cliente || 'Para Llevar') : `Orden #${orden.numero_comanda?.split('-')[2] || orden.id}`}
                           </p>
@@ -983,7 +937,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
 
   return (
     <div className="space-y-6">
-
       {/* ── HEADER ── */}
       <div className="md:flex md:items-center md:justify-between md:gap-4">
         {/* Móvil */}
@@ -995,7 +948,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
             <Badge className="bg-green-500 text-white text-[10px] px-2 py-0.5">{orden.estado.toUpperCase()}</Badge>
           </div>
           <h1 className="text-white font-semibold text-base">
-            {/* ✅ NOMBRE CLIENTE AQUI */}
             {orden.mesa_id ? `Mesa ${orden.mesa_numero}` : `🛍️ CLIENTE: ${orden.nombre_cliente || 'Llevar'}`} — Comanda #{orden.numero_comanda?.split('-')[2] || orden.id}
           </h1>
           <p className="text-blue-300 text-xs mb-2">Mesero: {orden.mesero_nombre}</p>
@@ -1017,7 +969,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
         <div className="hidden md:block">
           <h1 className="text-3xl font-bold text-gray-900">Pedidos</h1>
           <p className="text-gray-500 mt-1">
-            {/* ✅ NOMBRE CLIENTE AQUI */}
             Orden #{orden.numero_comanda?.split('-')[2] || orden.id} - {orden.mesa_id ? `Mesa ${orden.mesa_numero}` : `🛍️ CLIENTE: ${orden.nombre_cliente || 'Para Llevar'}`}
           </p>
         </div>
@@ -1042,12 +993,11 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
         </div>
       </div>
 
-      {/* ── INFO ORDEN (solo desktop) ── */}
+      {/* Info Orden (Desktop) */}
       <Card className="hidden md:block">
         <CardContent className="pt-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div><p className="text-sm text-gray-500">Comanda</p><p className="font-semibold">{orden.numero_comanda}</p></div>
-            {/* ✅ NOMBRE CLIENTE AQUI */}
             <div><p className="text-sm text-gray-500">{orden.mesa_id ? 'Mesa' : 'Cliente'}</p><p className="font-semibold">{orden.mesa_numero || (orden.nombre_cliente || 'Para Llevar')}</p></div>
             <div><p className="text-sm text-gray-500">Mesero</p><p className="font-semibold">{orden.mesero_nombre}</p></div>
             <div><p className="text-sm text-gray-500">Estado</p><p className="font-semibold capitalize">{orden.estado}</p></div>
@@ -1055,382 +1005,94 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
         </CardContent>
       </Card>
 
-      {/* ── AGREGAR PRODUCTOS (Desktop) ── */}
+      {/* ── SECCIÓN CENTRAL (Desktop) ── */}
       <div className="hidden md:grid md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2">
-          <CardHeader><CardTitle>Agregar Productos</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <Input placeholder="Buscar producto..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-            <div className="flex flex-wrap gap-2">
-              {categoriasFiltro.map((cat) => (
-                <Button key={cat.value} variant={filterCategoria === cat.value ? 'default' : 'outline'} size="sm"
-                  onClick={() => setFilterCategoria(cat.value)} className="text-sm">
-                  {cat.icon} {cat.label}
-                </Button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-              {productosMostrar?.map((item) => (
-                <button key={item.variantes ? item._key : item.id} onClick={() => handleAgregarProducto(item)}
-                  className="border border-gray-200 rounded-lg hover:border-orange-400 hover:shadow-md transition-all text-left overflow-hidden flex flex-col">
-                  {/* Imagen (solo para productos individuales) */}
-                  {!item.variantes && item.imagen_url ? (
-                    <div className="w-full h-28 bg-gray-50 overflow-hidden flex-shrink-0">
-                      <img
-                        src={item.imagen_url}
-                        alt={item.nombre}
-                        className="w-full h-full object-cover object-center"
-                        onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.classList.add('hidden'); }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-full h-28 bg-gradient-to-br from-orange-50 to-orange-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-4xl">{item.variantes ? '🍕' : '🍽️'}</span>
-                    </div>
-                  )}
-                  <div className="p-3 flex flex-col flex-1">
-                    <h3 className="font-semibold text-gray-900 text-sm leading-tight">
-                      {item.variantes ? item.nombreBase : item.nombre}
-                    </h3>
-                    <p className="text-xs text-gray-500 mt-0.5">{item.categoria_nombre}</p>
-                    {item.variantes ? (
-                      <p className="text-sm font-semibold text-orange-500 mt-auto pt-2">Ver Tamaños →</p>
-                    ) : (
-                      <p className="text-base font-bold text-blue-600 mt-auto pt-2">S/ {item.precio_venta.toFixed(2)}</p>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <ProductGrid
+          productosMostrar={productosMostrar}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          filterCategoria={filterCategoria}
+          setFilterCategoria={setFilterCategoria}
+          categoriasFiltro={categoriasFiltro}
+          onAgregarProducto={handleAgregarProducto}
+          layout="desktop"
+        />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ChefHat className="h-5 w-5 text-green-600" /> Productos Agregados
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {selectedProductos.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No hay productos agregados</p>
-            ) : (
-              <div className="space-y-3 max-h-64 overflow-y-auto">
-                {selectedProductos.map((item) => {
-                  const producto = productos?.find(p => p.id === item.producto_id);
-                  const nombreMostrar = item._esTemporal ? item._nombreTemporal : producto?.nombre;
-                  return (
-                    <div key={item.producto_id} className={`flex items-center justify-between p-3 rounded-lg ${item._esTemporal ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-900">{nombreMostrar}</p>
-                          {item.es_menu && <Badge className="bg-purple-600 text-white">MENÚ</Badge>}
-                          {item._esTemporal && <Badge className="bg-orange-400 text-white text-[10px]">Empaque</Badge>}
-                        </div>
-                        {item.es_menu && item.entrada_incluida && (
-                          <p className="text-xs text-purple-600 mt-1">Incluye: {item.entrada_incluida.nombre}</p>
-                        )}
-                        <p className="text-sm text-gray-500">S/ {parseFloat(item.precio).toFixed(2)} x {item.cantidad}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => handleActualizarCantidad(item.producto_id, item.cantidad - 1)}
-                          className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center">-</button>
-                        <span className="w-8 text-center font-semibold">{item.cantidad}</span>
-                        <button onClick={() => handleActualizarCantidad(item.producto_id, item.cantidad + 1)}
-                          className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center">+</button>
-                        <button onClick={() => handleRemoverProducto(item.producto_id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 className="h-4 w-4" /></button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {/* Botón de empaque: visible SIEMPRE que sea para llevar, sin importar si hay carrito */}
-            {esOrdenParaLlevar && (
-              <div className={`${selectedProductos.length > 0 ? '' : 'py-2'}`}>
-                <button
-                  onClick={handleAgregarEmpaque}
-                  className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-orange-300 text-orange-600 hover:bg-orange-50 hover:border-orange-400 rounded-lg py-2.5 text-sm font-medium transition-all"
-                >
-                  🥡 Agregar Descartable / Empaque
-                </button>
-              </div>
-            )}
-            {selectedProductos.length > 0 && (
-              <div className="border-t pt-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-lg font-semibold">Total:</span>
-                  <span className="text-2xl font-bold text-blue-600">S/ {totalCarrito.toFixed(2)}</span>
-                </div>
-                <Button onClick={handleGuardarOrden} disabled={agregarDetalleMutation.isPending}
-                  className="w-full bg-blue-600 hover:bg-blue-700">
-                  <Plus className="h-5 w-5 mr-2" />
-                  {agregarDetalleMutation.isPending ? 'Agregando...' : 'Agregar a la Orden'}
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <OrderCart
+          selectedProductos={selectedProductos}
+          productos={productos}
+          esOrdenParaLlevar={esOrdenParaLlevar}
+          handleAgregarEmpaque={handleAgregarEmpaque}
+          handleActualizarCantidad={handleActualizarCantidad}
+          handleRemoverProducto={handleRemoverProducto}
+          handleGuardarOrden={handleGuardarOrden}
+          isPending={agregarDetalleMutation.isPending}
+          totalCarrito={totalCarrito}
+          layout="desktop"
+        />
       </div>
 
-      {/* ── AGREGAR PRODUCTOS (Móvil) ── */}
+      {/* ── SECCIÓN CENTRAL (Móvil) ── */}
       <div className="md:hidden space-y-2">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-          {categoriasFiltro.map((cat) => (
-            <button key={cat.value} onClick={() => setFilterCategoria(cat.value)}
-              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs border transition-all ${filterCategoria === cat.value
-                ? 'bg-[#1e3a5f] text-white border-[#1e3a5f]'
-                : 'bg-white text-gray-600 border-gray-200'
-                }`}>
-              {cat.icon} {cat.label}
-            </button>
-          ))}
-        </div>
+        <ProductGrid
+          productosMostrar={productosMostrar}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          filterCategoria={filterCategoria}
+          setFilterCategoria={setFilterCategoria}
+          categoriasFiltro={categoriasFiltro}
+          onAgregarProducto={handleAgregarProducto}
+          layout="mobile"
+        />
 
-        <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2">
-          <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
-          <input className="bg-transparent text-sm flex-1 outline-none text-gray-700 placeholder-gray-400"
-            placeholder="Buscar producto..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-          {productosMostrar?.map((item) => (
-            <button key={item.variantes ? item._key : item.id} onClick={() => handleAgregarProducto(item)}
-              className="p-3 border border-gray-200 rounded-xl bg-white text-left active:scale-95 transition-transform">
-              <p className="font-medium text-[13px] text-gray-900 leading-tight mb-1">
-                {item.variantes ? item.nombreBase : item.nombre}
-              </p>
-              <p className="text-[11px] text-gray-400 mb-2">{item.categoria_nombre}</p>
-              <div className="flex items-center justify-between">
-                {item.variantes ? (
-                  <span className="text-[13px] font-semibold text-orange-500">Ver Tamaños →</span>
-                ) : (
-                  <span className="text-[14px] font-semibold text-blue-700">S/ {item.precio_venta.toFixed(2)}</span>
-                )}
-                <span className="w-6 h-6 rounded-md bg-[#1e3a5f] flex items-center justify-center">
-                  <Plus className="h-3.5 w-3.5 text-white" />
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {selectedProductos.length > 0 && (
-          <div className="border border-green-200 rounded-xl overflow-hidden">
-            <div className="bg-white divide-y divide-gray-100">
-              {selectedProductos.map((item) => {
-                const producto = productos?.find(p => p.id === item.producto_id);
-                const nombreMostrar = item._esTemporal ? item._nombreTemporal : producto?.nombre;
-                return (
-                  <div key={item.producto_id} className={`flex items-center gap-2 px-3 py-2 ${item._esTemporal ? 'bg-orange-50' : ''}`}>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-medium text-gray-900 truncate">{nombreMostrar}</p>
-                      {item.es_menu && item.entrada_incluida && (
-                        <p className="text-[11px] text-purple-600">Incluye: {item.entrada_incluida.nombre}</p>
-                      )}
-                      {item._esTemporal && (
-                        <span className="text-[10px] text-orange-500 font-medium">🥡 Empaque</span>
-                      )}
-                      <p className="text-[12px] text-gray-500">S/ {parseFloat(item.precio).toFixed(2)}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => handleActualizarCantidad(item.producto_id, item.cantidad - 1)}
-                        className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-700 font-medium">-</button>
-                      <span className="w-6 text-center text-sm font-semibold">{item.cantidad}</span>
-                      <button onClick={() => handleActualizarCantidad(item.producto_id, item.cantidad + 1)}
-                        className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-700 font-medium">+</button>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[13px] font-semibold text-gray-900 min-w-[52px] text-right">
-                        S/ {(parseFloat(item.precio) * item.cantidad).toFixed(2)}
-                      </span>
-                      <button onClick={() => handleRemoverProducto(item.producto_id)}
-                        className="p-1 text-red-500 hover:bg-red-50 rounded-lg">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="bg-green-50 px-3 py-2.5 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="bg-green-700 text-white text-[11px] font-medium px-2 py-0.5 rounded-full">
-                  {selectedProductos.reduce((s, p) => s + p.cantidad, 0)} items
-                </span>
-                <span className="text-blue-700 font-semibold text-sm">S/ {totalCarrito.toFixed(2)}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {esOrdenParaLlevar && (
-                  <button
-                    onClick={handleAgregarEmpaque}
-                    className="bg-orange-100 text-orange-700 border border-orange-300 text-xs font-medium px-3 py-2 rounded-lg flex items-center gap-1"
-                  >
-                    🥡 Empaque
-                  </button>
-                )}
-                <button onClick={handleGuardarOrden} disabled={agregarDetalleMutation.isPending}
-                  className="bg-green-700 text-white text-xs font-medium px-4 py-2 rounded-lg">
-                  {agregarDetalleMutation.isPending ? '...' : 'Agregar a la orden'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <OrderCart
+          selectedProductos={selectedProductos}
+          productos={productos}
+          esOrdenParaLlevar={esOrdenParaLlevar}
+          handleAgregarEmpaque={handleAgregarEmpaque}
+          handleActualizarCantidad={handleActualizarCantidad}
+          handleRemoverProducto={handleRemoverProducto}
+          handleGuardarOrden={handleGuardarOrden}
+          isPending={agregarDetalleMutation.isPending}
+          totalCarrito={totalCarrito}
+          layout="mobile"
+        />
       </div>
 
-      {/* ── DETALLES DE LA ORDEN ── */}
-      {orden.detalles?.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Productos en la Orden</CardTitle></CardHeader>
-          <CardContent>
+      {/* ── PRODUCTOS EN LA ORDEN (DB) ── */}
+      <OrderItemsTable
+        orden={orden}
+        observaciones={observaciones}
+        handleUpdateObservacion={handleUpdateObservacion}
+        handleEliminarDetalle={handleEliminarDetalle}
+        handleCortesia={handleCortesia}
+        eliminarDetalleMutationIsPending={eliminarDetalleMutation.isPending}
+        aplicarCortesiaMutationIsPending={aplicarCortesiaMutation.isPending}
+        layout="desktop"
+      />
 
-            {/* Desktop */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="border-b border-gray-100 text-gray-500">
-                  <tr>
-                    <th className="font-medium py-3 px-4">Producto</th>
-                    <th className="text-center font-medium py-3 px-2">Cant.</th>
-                    <th className="text-right font-medium py-3 px-4">Precio</th>
-                    <th className="text-right font-medium py-3 px-4">Subtotal</th>
-                    <th className="text-center font-medium py-3 px-4">Cocina</th>
-                    <th className="text-center font-medium py-3 px-4">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orden.detalles.map((detalle) => (
-                    <tr key={detalle.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4">
-                        <div className="flex flex-col">
-                          <span className="font-medium">
-                            {detalle.es_menu ? `MENÚ: ${detalle.producto_nombre}` : detalle.producto_nombre}
-                          </span>
-                          {detalle.es_menu && detalle.entrada_incluida && (
-                            <span className="block text-xs text-purple-600">→ {detalle.entrada_incluida.nombre}</span>
-                          )}
-                          {!detalle.enviado_cocina ? (
-                            <input type="text" placeholder="Nota (ej. sin ají, pierna...)"
-                              className="mt-1 w-full text-[11px] p-1 border-b border-blue-200 bg-blue-50/30 focus:bg-white outline-none italic rounded"
-                              value={observaciones[detalle.id] || ''}
-                              onChange={(e) => handleUpdateObservacion(detalle.id, e.target.value)} />
-                          ) : (
-                            detalle.observaciones && (
-                              <span className="text-[10px] text-orange-600 font-bold mt-1 uppercase italic">
-                                📝 NOTA: {detalle.observaciones}
-                              </span>
-                            )
-                          )}
-                        </div>
-                      </td>
-                      <td className="text-center py-3 px-2">{detalle.cantidad}</td>
-                      <td className="text-right py-3 px-4">S/ {parseFloat(detalle.precio || 0).toFixed(2)}</td>
-                      <td className="text-right py-3 px-4 font-semibold">S/ {parseFloat(detalle.subtotal || 0).toFixed(2)}</td>
-                      <td className="text-center py-3 px-4">
-                        <Badge variant={detalle.enviado_cocina ? 'default' : 'secondary'} className="whitespace-nowrap text-[10px]">
-                          {detalle.enviado_cocina ? '✅ Enviado' : '⏳ Pendiente'}
-                        </Badge>
-                      </td>
-                      <td className="text-center py-3 px-4">
-                        {!detalle.enviado_cocina && (
-                          <button onClick={() => handleEliminarDetalle(detalle.id)}
-                            disabled={eliminarDetalleMutation.isPending}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleCortesia(detalle.id)}
-                          disabled={aplicarCortesiaMutation?.isPending}
-                          title="Aplicar cortesía"
-                          className="p-2 text-green-600 hover:bg-green-50 rounded">
-                          <Gift className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      <OrderItemsTable
+        orden={orden}
+        observaciones={observaciones}
+        handleUpdateObservacion={handleUpdateObservacion}
+        handleEliminarDetalle={handleEliminarDetalle}
+        handleCortesia={handleCortesia}
+        eliminarDetalleMutationIsPending={eliminarDetalleMutation.isPending}
+        aplicarCortesiaMutationIsPending={aplicarCortesiaMutation.isPending}
+        layout="mobile"
+      />
 
-            {/* Móvil */}
-            <div className="flex flex-col gap-2 md:hidden">
-              {orden.detalles.map((detalle) => (
-                <div key={detalle.id} className="bg-white border border-gray-100 rounded-xl px-3 py-2.5">
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="flex-1">
-                      <p className="text-[13px] font-medium text-gray-900 leading-tight">
-                        {detalle.es_menu ? `MENÚ: ${detalle.producto_nombre}` : detalle.producto_nombre}
-                      </p>
-                      {!detalle.enviado_cocina ? (
-                        <input type="text" placeholder="Nota especial..."
-                          className="mt-1 w-full text-[11px] p-1.5 border border-blue-100 bg-blue-50/50 rounded-lg outline-none italic"
-                          value={observaciones[detalle.id] || ''}
-                          onChange={(e) => handleUpdateObservacion(detalle.id, e.target.value)} />
-                      ) : (
-                        detalle.observaciones && (
-                          <p className="text-[10px] text-orange-600 font-bold mt-1 italic uppercase">
-                            📝 {detalle.observaciones}
-                          </p>
-                        )
-                      )}
-                    </div>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${detalle.enviado_cocina ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
-                      {detalle.enviado_cocina ? '✅ Enviado' : '⏳ Pendiente'}
-                    </span>
-                  </div>
-                  {detalle.es_menu && detalle.entrada_incluida && (
-                    <p className="text-[11px] text-purple-600 mb-1.5">→ {detalle.entrada_incluida.nombre}</p>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12px] text-gray-500">
-                      Cant: <span className="font-medium text-gray-800">{detalle.cantidad}</span>
-                      {' · '}S/ {parseFloat(detalle.precio || 0).toFixed(2)}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-semibold text-gray-900">
-                        S/ {parseFloat(detalle.subtotal || 0).toFixed(2)}
-                      </span>
-                      {!detalle.enviado_cocina && (
-                        <button onClick={() => handleEliminarDetalle(detalle.id)}
-                          disabled={eliminarDetalleMutation.isPending}
-                          className="p-1 text-red-500 hover:bg-red-50 rounded-lg">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleCortesia(detalle.id)}
-                        disabled={aplicarCortesiaMutation?.isPending}
-                        className="p-1.5 text-green-500 hover:bg-green-50 rounded-lg">
-                        <Gift className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── SECCIÓN DE TOTALES Y ACCIONES DE LA ORDEN ── */}
+      {/* ── TOTALES Y ACCIONES FINALIZADORAS ── */}
       <div className="mt-8 border-t border-gray-200 pt-6 flex flex-col md:flex-row justify-between items-end md:items-center gap-4 font-sans">
-
-        {/* 1. ZONA DE TOTALES (Siempre visible) */}
         <div className="text-right md:text-left w-full md:w-auto">
           <span className="text-gray-500 text-sm font-normal block">
             Subtotal: S/ {orden.detalles?.reduce((acc, d) => acc + parseFloat(d.subtotal || 0), 0).toFixed(2)}
           </span>
-
-          {/* Muestra el descuento si es mayor a 0 */}
           {parseFloat(orden.descuento_total) > 0 && (
             <span className="text-orange-500 text-sm font-medium block">
               Descuento: - S/ {parseFloat(orden.descuento_total).toFixed(2)}
             </span>
           )}
-
           <span className="text-2xl font-bold text-gray-800 block mt-1">
             TOTAL: S/ {(
               orden.detalles?.reduce((acc, d) => acc + parseFloat(d.subtotal || 0), 0) -
@@ -1439,11 +1101,8 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
           </span>
         </div>
 
-        {/* 2. ZONA DE BOTONES */}
         <div className="flex flex-wrap items-center justify-end gap-3 w-full md:w-auto">
-
-          {/* 👇 NUEVO BOTÓN: Aplicar Descuento (Visible para Admin/Cajero) 👇 */}
-          {isAdminOCajero && (
+          {isAdminOCajero && orden.estado !== 'cobrada' && orden.estado !== 'cancelada' && (
             <Button
               onClick={handleAplicarDescuento}
               variant="outline"
@@ -1455,7 +1114,6 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
             </Button>
           )}
 
-          {/* 👇 TU BOTÓN ORIGINAL: Enviar a Cocina (Condicionado) 👇 */}
           {orden.estado === 'abierta' && orden.detalles?.some(d => !d.enviado_cocina) && (
             <Button
               onClick={handleEnviarCocina}
@@ -1470,38 +1128,25 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
             </Button>
           )}
 
+          {isAdminOCajero && orden.estado !== 'cobrada' && orden.estado !== 'cancelada' && (
+            <Button
+              onClick={handleCobrar}
+              disabled={cerrarOrdenMutation.isPending}
+              className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold"
+            >
+              <Receipt className="h-4 w-4 mr-2" />
+              Cobrar Cuenta
+            </Button>
+          )}
         </div>
       </div>
 
       {/* ── MODAL SELECCIÓN DE TAMAÑO DE PIZZA ── */}
-      <Dialog open={!!pizzaSeleccionada} onOpenChange={(open) => { if (!open) setPizzaSeleccionada(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>🍕 Elige el tamaño para: {pizzaSeleccionada?.nombreBase}</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 space-y-3">
-            {pizzaSeleccionada?.variantes?.map((variante) => {
-              const tamano = variante.nombre.split(' - ')[1] || variante.nombre;
-              return (
-                <button
-                  key={variante.id}
-                  onClick={() => { agregarAlCarritoIndividual(variante); setPizzaSeleccionada(null); }}
-                  className="w-full flex items-center justify-between p-4 border-2 border-gray-200 rounded-xl hover:border-orange-400 hover:bg-orange-50 active:scale-[0.98] transition-all text-left group"
-                >
-                  <div>
-                    <p className="font-semibold text-gray-900 text-base group-hover:text-orange-700">{tamano}</p>
-                    <p className="text-xs text-gray-400">{pizzaSeleccionada?.nombreBase}</p>
-                  </div>
-                  <span className="text-lg font-bold text-blue-600">S/ {variante.precio_venta.toFixed(2)}</span>
-                </button>
-              );
-            })}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPizzaSeleccionada(null)}>Cancelar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PizzaSizeDialog
+        pizzaSeleccionada={pizzaSeleccionada}
+        onClose={() => setPizzaSeleccionada(null)}
+        onSelectVariant={agregarAlCarritoIndividual}
+      />
     </div>
   );
 };

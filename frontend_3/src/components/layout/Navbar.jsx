@@ -1,4 +1,4 @@
-﻿import { Bell, Search, Settings, User, Menu } from 'lucide-react'; // 👈 Añadimos Menu
+import { Bell, Search, Settings, User, Menu } from 'lucide-react'; // 👈 Añadimos Menu
 import { useAuthStore } from '@/store/auth.store';
 
 // 👇 Recibimos la función onMenuClick como prop 👇
@@ -12,7 +12,7 @@ export const Navbar = ({ onMenuClick }) => {
   });
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 md:px-6 shadow-sm">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 md:px-6">
       
       {/* Sección Izquierda: Botón Hamburguesa + Títulos */}
       <div className="flex items-center gap-3 flex-1">
