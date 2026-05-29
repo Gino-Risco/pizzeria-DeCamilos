@@ -272,7 +272,7 @@ export const Sidebar = ({ isOpen, setIsOpen, isCollapsed, onToggleCollapse }) =>
             </div>
             <div className={cn("transition-all duration-300", isCollapsed ? "lg:opacity-0 lg:w-0 lg:h-0 overflow-hidden" : "opacity-100 w-auto")}>
               <h1 className="text-white font-bold text-sm leading-tight whitespace-nowrap">D' Camilos</h1>
-              <p className="text-xs text-slate-400 font-medium">v1.0.1</p>
+              <p className="text-xs text-slate-400 font-medium">v1.0.2</p>
             </div>
           </div>
         </div>
