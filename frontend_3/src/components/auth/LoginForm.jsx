@@ -78,7 +78,7 @@ export const LoginForm = () => {
               <h1 className="text-white text-4xl font-extrabold leading-tight">
                 D' CAMILOS <br /> <span className="text-cyan-500">Pizzería</span>
               </h1>
-              <p className="text-slate-500 text-xs tracking-[3px] uppercase font-bold mt-1">v1.0.0</p>
+              <p className="text-slate-500 text-xs tracking-[3px] uppercase font-bold mt-1">v1.0.2</p>
             </div>
           </div>
 
