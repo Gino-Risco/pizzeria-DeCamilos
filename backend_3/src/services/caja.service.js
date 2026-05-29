@@ -360,7 +360,7 @@ async function obtenerMovimientosPorCaja(caja_id, filtros = {}) {
 async function obtenerReporteCajaDia(fecha) {
   const result = await query(
     `SELECT * FROM pos.v_caja_dia WHERE fecha_apertura::date = $1`,
-    [fecha || new Date().toISOString().split('T')[0]]
+    [fecha || new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Lima' })]
   );
   return result.rows;
 }
@@ -459,13 +459,13 @@ async function getMovimientosDelDia(caja_id, filtros = {}) {
   }
 
   if (fecha_desde) {
-    conditions.push(`(cm.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date >= $${paramIndex}::date`);
-    params.push(fecha_desde);
-    paramIndex++;
-  }
-
-  if (fecha_hasta) {
-    conditions.push(`(cm.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date <= $${paramIndex}::date`);
+     conditions.push(`cm.created_at::date >= $${paramIndex}::date`);
+     params.push(fecha_desde);
+     paramIndex++;
+   }
+ 
+   if (fecha_hasta) {
+     conditions.push(`cm.created_at::date <= $${paramIndex}::date`);
     params.push(fecha_hasta);
     paramIndex++;
   }

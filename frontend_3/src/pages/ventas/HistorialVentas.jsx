@@ -8,9 +8,16 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { enviarImpresion } from '@/utils/printServer';
+import { getConfiguracion } from '@/services/configuracion.service';
 
 export const HistorialVentas = () => {
   const queryClient = useQueryClient();
+
+  const { data: systemConfig } = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: getConfiguracion,
+    staleTime: 60000,
+  });
 
   // --- ESTADOS DE BÚSQUEDA Y FILTROS ---
   const [searchTerm, setSearchTerm] = useState('');
@@ -171,35 +178,87 @@ export const HistorialVentas = () => {
       const descuento     = parseFloat(venta.descuento || 0);
       const totalNeto     = parseFloat(venta.total || 0);
 
-      const contenido = `
-══════════════════════════
-      PIZZERÍA
-     D' CAMILOS
-   RUC: 20123456789
-══════════════════════════
-  *** COPIA DE TICKET ***
-TICKET #${venta.numero_ticket || venta.id}
-${identificador}
-Fecha: ${new Date(venta.created_at).toLocaleString()}
-──────────────────────────
-${detallesFiltrados.map(d =>
-        `${d.cantidad}x ${d.producto_nombre}\n   S/ ${parseFloat(d.subtotal || (d.precio * d.cantidad) || 0).toFixed(2)}`
-      ).join('\n')}
-──────────────────────────
-SUBTOTAL:      S/ ${subtotalBruto.toFixed(2)}
-${descuento > 0 ? `DESCUENTO:    - S/ ${descuento.toFixed(2)}\n` : ''}──────────────────────────
-TOTAL:         S/ ${totalNeto.toFixed(2)}
-──────────────────────────
-Método: ${venta.metodo_pago?.toUpperCase()}
-Pagado: S/ ${parseFloat(venta.monto_pagado || 0).toFixed(2)}
-Vuelto: S/ ${parseFloat(venta.vuelto || 0).toFixed(2)}
-══════════════════════════
-   ¡Gracias por su compra!
-      `.trim();
+      // IGV extraído del total final
+      const subtotalSinIgv = totalNeto / 1.18;
+      const igvCalculado = totalNeto - subtotalSinIgv;
+
+      // Cargar config actual de forma asíncrona si no está cargada
+      let activeConfig = systemConfig;
+      if (!activeConfig) {
+        try {
+          activeConfig = await getConfiguracion();
+        } catch {
+          activeConfig = {
+            nombre_restaurante: "D' CAMILOS",
+            ruc: "20123456789",
+            direccion: "Jr. Belen 185 - Esperanza Parte Baja",
+            telefono: "942 685 506",
+            mensaje_ticket: "¡Gracias por su preferencia!"
+          };
+        }
+      }
+
+      // Generar html para SweetAlert2
+      const htmlDetalles = detallesFiltrados.map(d => `
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+          <span>${d.cantidad}x ${d.producto_nombre}</span>
+          <span>S/ ${parseFloat(d.subtotal || (d.precio * d.cantidad) || 0).toFixed(2)}</span>
+        </div>
+      `).join('') || '<div style="color:#888;text-align:center;">Sin productos</div>';
+
+      let pieHtml = '';
+      if ((venta.metodo_pago === 'yape' || (venta.metodo_pago === 'mixto' && venta.metodo_digital === 'yape')) && activeConfig.qr_yape_url) {
+        pieHtml = `
+          <div style="text-align:center;margin:15px 0;padding:10px;border:1px border-dashed #c084fc;background-color:#faf5ff;border-radius:12px;">
+            <p style="color:#7e22ce;font-weight:bold;font-size:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">📱 Paga con YAPE:</p>
+            <img src="${activeConfig.qr_yape_url}" style="max-width:120px;height:auto;margin:0 auto;border-radius:8px;display:block;" />
+          </div>
+        `;
+      }
+      pieHtml += `
+        <div style="text-align:center;margin-top:10px;font-style:italic;font-weight:bold;color:#1f2937;font-size:12px;">
+          "${activeConfig.mensaje_ticket || '¡Gracias por su preferencia!'}"
+        </div>
+      `;
+
+      const swalHtml = `
+        <div style="text-align:left;font-family:monospace;font-size:12px;color:#374151;line-height:1.5;padding:15px;background:#fff;border-radius:12px;box-shadow:inset 0 0 10px rgba(0,0,0,0.05);border:1px solid #e5e7eb;">
+          <div style="text-align:center;margin-bottom:12px;border-bottom:1px dashed #ccc;padding-bottom:12px;">
+            <span style="display:inline-block;border:1px solid #d1d5db;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:bold;color:#6b7280;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">*** COPIA DE TICKET ***</span><br/>
+            <strong style="font-size:14px;color:#111827;text-transform:uppercase;letter-spacing:0.5px;">${activeConfig.nombre_restaurante || "D' CAMILOS"}</strong><br/>
+            ${activeConfig.ruc ? `<span style="color:#4b5563;">RUC: ${activeConfig.ruc}</span><br/>` : ''}
+            <span style="color:#6b7280;">${activeConfig.direccion || ''}</span><br/>
+            ${activeConfig.telefono ? `<span style="color:#6b7280;">Delivery: ${activeConfig.telefono}</span>` : ''}
+          </div>
+          <div style="margin-bottom:8px;color:#4b5563;">
+            <strong>TICKET #${venta.numero_ticket || venta.id}</strong><br/>
+            <strong>${identificador}</strong><br/>
+            Fecha: ${new Date(venta.created_at).toLocaleString()}<br/>
+          </div>
+          <div style="border-top:1px dashed #ccc;border-bottom:1px dashed #ccc;padding:8px 0;margin:8px 0;color:#1f2937;">
+            ${htmlDetalles}
+          </div>
+          <div style="text-align:right;margin-bottom:8px;color:#4b5563;">
+            <div style="display:flex;justify-content:space-between;"><span>SUBTOTAL BRUTO:</span><span>S/ ${subtotalBruto.toFixed(2)}</span></div>
+            ${descuento > 0 ? `<div style="display:flex;justify-content:space-between;color:#ea580c;font-weight:bold;"><span>DESCUENTO:</span><span>- S/ ${descuento.toFixed(2)}</span></div>` : ''}
+            <div style="display:flex;justify-content:space-between;"><span>OP. GRAVADA:</span><span>S/ ${subtotalSinIgv.toFixed(2)}</span></div>
+            <div style="display:flex;justify-content:space-between;"><span>IGV (18%):</span><span>S/ ${igvCalculado.toFixed(2)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:13px;color:#111827;margin-top:4px;border-top:1px solid #eee;padding-top:4px;"><span>TOTAL A PAGAR:</span><span>S/ ${totalNeto.toFixed(2)}</span></div>
+          </div>
+          <div style="border-top:1px dashed #ccc;padding-top:8px;margin-top:8px;color:#4b5563;font-size:11px;background-color:#f9fafb;padding:8px;border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;"><span>Método de Pago:</span><strong style="color:#111827;">${venta.metodo_pago?.toUpperCase() || 'EFECTIVO'}</strong></div>
+            <div style="display:flex;justify-content:space-between;"><span>Monto Recibido:</span><span>S/ ${parseFloat(venta.monto_pagado || 0).toFixed(2)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:bold;color:#16a34a;margin-top:2px;"><span>Vuelto:</span><span>S/ ${parseFloat(venta.vuelto || 0).toFixed(2)}</span></div>
+          </div>
+          <div style="border-top:1px dashed #ccc;margin-top:10px;padding-top:10px;">
+            ${pieHtml}
+          </div>
+        </div>
+      `;
 
       Swal.fire({
         title: '🧾 Reimpresión de Ticket',
-        html: `<pre style="text-align:left;font-family:monospace;font-size:12px;white-space:pre-wrap;">${contenido}</pre>`,
+        html: swalHtml,
         confirmButtonText: '🖨️ Imprimir en Térmica',
         showCancelButton: true,
         cancelButtonText: 'Cerrar',

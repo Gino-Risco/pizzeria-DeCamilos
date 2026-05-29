@@ -30,13 +30,13 @@ async function getAllOrdenes(filtros = {}) {
   }
 
   if (fecha_desde) {
-    conditions.push(`(o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date >= $${paramIndex}::date`);
+    conditions.push(`o.created_at::date >= $${paramIndex}::date`);
     params.push(fecha_desde);
     paramIndex++;
   }
 
   if (fecha_hasta) {
-    conditions.push(`(o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date <= $${paramIndex}::date`);
+    conditions.push(`o.created_at::date <= $${paramIndex}::date`);
     params.push(fecha_hasta);
     paramIndex++;
   }

@@ -567,3 +567,20 @@ enum turno_tipo {
 
   @@schema("public")
 }
+
+// Tabla de configuración del sistema (siempre 1 fila con id=1)
+model configuracion_sistema {
+  id                 Int      @id @default(autoincrement())
+  nombre_restaurante String   @default("D' Camilos Pizzería") @db.VarChar(100)
+  ruc                String   @default("20123456789") @db.VarChar(15)
+  direccion          String   @default("Jr. Belen 185 - Esperanza Parte Baja") @db.VarChar(200)
+  telefono           String   @default("942 685 506") @db.VarChar(20)
+  logo_url           String?  @db.Text
+  qr_yape_numero     String?  @db.VarChar(20)
+  qr_yape_url        String?  @db.Text
+  qr_yape_contenido  String?  @db.Text
+  mensaje_ticket     String   @default("¡Gracias por su preferencia!") @db.Text
+  updated_at         DateTime @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@schema("public")
+}

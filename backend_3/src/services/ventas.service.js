@@ -66,13 +66,13 @@ async function getAllVentas(filtros = {}) {
     }
 
     if (fecha_desde) {
-        conditions.push(`(v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date >= $${paramIndex}::date`);
+        conditions.push(`v.created_at::date >= $${paramIndex}::date`);
         params.push(fecha_desde);
         paramIndex++;
     }
 
     if (fecha_hasta) {
-        conditions.push(`(v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date <= $${paramIndex}::date`);
+        conditions.push(`v.created_at::date <= $${paramIndex}::date`);
         params.push(fecha_hasta);
         paramIndex++;
     }

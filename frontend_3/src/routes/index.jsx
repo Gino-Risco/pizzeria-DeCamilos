@@ -23,6 +23,7 @@ import { Carta } from '@/pages/productos/Carta';
 import { Almacen } from '@/pages/productos/Almacen';
 import { Usuarios } from '@/pages/usuarios/Usuarios';
 import { ReportesPage } from '@/pages/reportes/reporte';
+import { Configuracion } from '@/pages/configuracion/Configuracion';
 import { NotFound } from '@/pages/NotFound';
 
 export const router = createBrowserRouter([
@@ -145,6 +146,12 @@ export const router = createBrowserRouter([
       {
         path: '/inventario/kardex',
         element: <ProtectedRoute allowedRoles={['administrador']}><Kardex /></ProtectedRoute>
+      },
+
+      // --- CONFIGURACIÓN DEL SISTEMA ---
+      {
+        path: '/configuracion',
+        element: <ProtectedRoute allowedRoles={['administrador']}><Configuracion /></ProtectedRoute>
       },
 
       // Redirección inicial

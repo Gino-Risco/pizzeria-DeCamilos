@@ -1,15 +1,21 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 require('dotenv').config();
 
-// Definimos la cadena de conexión priorizando la de Railway
+// Forzar a que las marcas de tiempo sin zona horaria (TIMESTAMP) se interpreten siempre en America/Lima (UTC-5)
+types.setTypeParser(types.builtins.TIMESTAMP, (value) => {
+  if (!value) return null;
+  // Reemplazar el espacio con 'T' y añadir '-05:00' para forzar la interpretación en hora local de Perú
+  const isoStr = value.replace(' ', 'T') + '-05:00';
+  return new Date(isoStr);
+});
+
+// Definimos la cadena de conexión local
 const connectionString = process.env.DATABASE_URL || 
   `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
 
-// Creamos el Pool
+// Creamos el Pool de conexiones seguro
 const pool = new Pool({
   connectionString: connectionString,
-  // EL TRUCO ESTÁ AQUÍ: Si hay DATABASE_URL (Railway), forzamos la aceptación del certificado.
-  // Si estamos en tu PC (usando DB_HOST), apagamos el SSL para no romper tu entorno local.
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
@@ -30,6 +36,7 @@ pool.on('error', (err) => {
 const SCHEMA = {
   POS: 'pos',
   INVENTARIO: 'inventario',
+  PUBLIC: 'public',
 };
 
 const TABLE = {
@@ -57,6 +64,9 @@ const TABLE = {
   SALIDAS_COCINA: `${SCHEMA.INVENTARIO}.salidas_cocina`,
   SALIDAS_COCINA_DETALLE: `${SCHEMA.INVENTARIO}.salidas_cocina_detalle`,
   ALERTAS_STOCK: `${SCHEMA.INVENTARIO}.alertas_stock`,
+
+  // Schema PUBLIC
+  CONFIGURACION: `${SCHEMA.PUBLIC}.configuracion_sistema`,
 };
 
 // Función para ejecutar queries parametrizadas

@@ -9,7 +9,6 @@
     "seed": "node src/utils/seed.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.19.3",
     "bcrypt": "^5.1.1",
     "cloudinary": "^1.41.3",

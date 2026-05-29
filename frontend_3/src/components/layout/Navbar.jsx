@@ -1,4 +1,5 @@
 import { Bell, Search, Settings, User, Menu } from 'lucide-react'; // 👈 Añadimos Menu
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth.store';
 
 // 👇 Recibimos la función onMenuClick como prop 👇
@@ -48,9 +49,9 @@ export const Navbar = ({ onMenuClick }) => {
           <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full"></span>
         </button>
 
-        <button className="hidden sm:block p-2 rounded-lg hover:bg-gray-100 transition-colors">
+        <Link to="/configuracion" className="hidden sm:block p-2 rounded-lg hover:bg-gray-100 transition-colors" title="Configuración del sistema">
           <Settings className="h-5 w-5 text-gray-600" />
-        </button>
+        </Link>
 
         <div className="flex items-center gap-2 p-1 md:p-2 rounded-lg">
           <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shrink-0">

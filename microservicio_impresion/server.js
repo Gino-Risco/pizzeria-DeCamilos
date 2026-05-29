@@ -5,17 +5,52 @@ escpos.USB = require('escpos-usb');
 
 const app = express();
 app.use(cors({
-    origin: '*',                     // Permite peticiones desde cualquier origen (móviles, PCs en red)
+    origin: '*',
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
 }));
 app.use(express.json());
 
 // ────────────────────────────────────────────────────────────────
+// CONFIGURACIÓN DINÁMICA
+// Se carga desde el backend al arrancar y se recarga bajo demanda.
+// Tiene valores por defecto para que el microservicio funcione
+// aunque el backend no esté disponible en ese momento.
+// ────────────────────────────────────────────────────────────────
+let config = {
+    nombre_restaurante: "D' CAMILOS",
+    ruc: '20123456789',
+    direccion: 'Jr. Belen 185 - Esperanza Parte Baja',
+    telefono: '942 685 506',
+    logo_url: null,
+    qr_yape_numero: null,
+    qr_yape_url: null,
+    qr_yape_contenido: null,
+    mensaje_ticket: '¡Gracias por su preferencia!',
+};
+
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+
+const cargarConfig = async () => {
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/configuracion`);
+        const data = await res.json();
+        if (data.success && data.data) {
+            config = { ...config, ...data.data };
+            console.log(`✅ Configuración cargada: ${config.nombre_restaurante}`);
+        }
+    } catch (e) {
+        console.warn('⚠️  No se pudo cargar la config del backend, usando valores por defecto.');
+    }
+};
+
+// Cargar config al arrancar
+cargarConfig();
+
+// ────────────────────────────────────────────────────────────────
 // UTILIDADES
 // ────────────────────────────────────────────────────────────────
 
-// Limpiar tildes y caracteres especiales para impresoras ESC/POS básicas
 const limpiarTexto = (texto) => {
     if (!texto) return '';
     return texto
@@ -26,7 +61,6 @@ const limpiarTexto = (texto) => {
         .replace(/[^\x20-\x7E]/g, '');
 };
 
-// Alinear texto izquierda/derecha dentro de un ancho fijo (48 chars)
 const alinear = (izq, der, ancho = 48) => {
     let strIzq = izq.toString();
     let strDer = der.toString();
@@ -36,24 +70,40 @@ const alinear = (izq, der, ancho = 48) => {
     return strIzq + ' '.repeat(espacios > 0 ? espacios : 0) + strDer;
 };
 
-// Intentar conectar con la impresora; devuelve { device, printer } o lanza error
 const conectarImpresora = () => {
     const device = new escpos.USB();
     const printer = new escpos.Printer(device);
     return { device, printer };
 };
 
-// Cabecera estándar D' CAMILOS para todos los tickets
+// Cabecera dinámica — usa config cargada desde la BD
 const imprimirCabecera = (printer) => {
     printer
         .font('a').align('ct')
-        .size(1, 1).style('b').text("D' CAMILOS").style('normal')
+        .size(1, 1).style('b').text(limpiarTexto(config.nombre_restaurante)).style('normal')
         .size(0, 0)
-        .text(limpiarTexto('PIZZERIA - RESTAURANT'))
-        .text(limpiarTexto('Jr. Belen 185 - Esperanza Parte Baja'))
-        .text(limpiarTexto('Delivery: 942 685 506'))
+        .text(limpiarTexto(config.ruc ? `RUC: ${config.ruc}` : ''))
+        .text(limpiarTexto(config.direccion || ''))
+        .text(limpiarTexto(config.telefono ? `Delivery: ${config.telefono}` : ''))
         .text('================================================');
 };
+
+// ────────────────────────────────────────────────────────────────
+// ENDPOINT: Recargar configuración sin reiniciar el microservicio
+//   POST /api/recargar-config
+// Lo llama el frontend justo después de guardar la configuración.
+// ────────────────────────────────────────────────────────────────
+app.post('/api/recargar-config', async (req, res) => {
+    await cargarConfig();
+    res.json({ success: true, message: 'Configuración recargada', config: {
+        nombre_restaurante: config.nombre_restaurante,
+        ruc: config.ruc,
+        direccion: config.direccion,
+        telefono: config.telefono,
+        qr_yape_url: config.qr_yape_url,
+        qr_yape_contenido: config.qr_yape_contenido ? '***' : null,
+    }});
+});
 
 // ────────────────────────────────────────────────────────────────
 // 1. TICKET DE COCINA  →  POST /api/imprimir/cocina
@@ -191,14 +241,33 @@ app.post('/api/imprimir/caja', (req, res) => {
             if (esPreCuenta) {
                 printer.text(limpiarTexto('ESTE DOCUMENTO NO ES'));
                 printer.text(limpiarTexto('UN COMPROBANTE DE PAGO'));
+                printer.text('================================================');
+                printer.feed(3).cut().close();
+                res.json({ success: true, message: 'Pre-cuenta impresa' });
             } else {
-                printer.text(limpiarTexto('¡GRACIAS POR SU PREFERENCIA!'));
-                printer.text(limpiarTexto('Vuelva pronto :)'));
+                // ── QR de Yape (solo si está configurado) ─────────────
+                if (config.qr_yape_contenido) {
+                    printer
+                        .text('')
+                        .align('ct')
+                        .text(limpiarTexto('Paga con YAPE:'))
+                        .qrimage(config.qr_yape_contenido, { type: 'png', mode: 'dM', size: 4 }, function () {
+                            printer
+                                .text('')
+                                .text('================================================')
+                                .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
+                                .text('================================================')
+                                .feed(3).cut().close();
+                            res.json({ success: true, message: 'Comprobante impreso con QR Yape' });
+                        });
+                } else {
+                    printer
+                        .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
+                        .text('================================================')
+                        .feed(3).cut().close();
+                    res.json({ success: true, message: 'Comprobante impreso' });
+                }
             }
-            printer.text('================================================');
-
-            printer.feed(3).cut().close();
-            res.json({ success: true, message: esPreCuenta ? 'Pre-cuenta impresa' : 'Comprobante impreso' });
         });
     } catch (e) {
         console.error('Error impresora caja:', e);
@@ -349,11 +418,24 @@ app.post('/api/imprimir/reimpresion', (req, res) => {
                 printer.text(limpiarTexto(alinear('VUELTO:', `S/ ${vuelto.toFixed(2)}`)));
 
             printer.align('ct').text('================================================');
-            printer.text(limpiarTexto('¡GRACIAS POR SU PREFERENCIA!'));
-            printer.text('================================================');
-
-            printer.feed(3).cut().close();
-            res.json({ success: true, message: 'Reimpresion enviada' });
+            if (venta.metodo_pago === 'yape' && config.qr_yape_contenido) {
+                printer
+                    .text(limpiarTexto('Paga con YAPE:'))
+                    .qrimage(config.qr_yape_contenido, { type: 'png', mode: 'dM', size: 4 }, function () {
+                        printer
+                            .text('')
+                            .text('================================================')
+                            .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
+                            .text('================================================')
+                            .feed(3).cut().close();
+                        res.json({ success: true, message: 'Reimpresion enviada' });
+                    });
+            } else {
+                printer.text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'));
+                printer.text('================================================');
+                printer.feed(3).cut().close();
+                res.json({ success: true, message: 'Reimpresion enviada' });
+            }
         });
     } catch (e) {
         console.error('Error impresora reimpresion:', e);
@@ -366,7 +448,6 @@ app.post('/api/imprimir/reimpresion', (req, res) => {
 // ────────────────────────────────────────────────────────────────
 app.get('/api/estado', (_req, res) => {
     try {
-        // Intentar detectar la impresora sin abrirla
         const devices = escpos.USB.findPrinter();
         res.json({ ok: true, impresoras_detectadas: devices.length });
     } catch (e) {
@@ -385,5 +466,6 @@ app.listen(PORT, () => {
     console.log(`   POST http://localhost:${PORT}/api/imprimir/caja`);
     console.log(`   POST http://localhost:${PORT}/api/imprimir/reporte-cierre`);
     console.log(`   POST http://localhost:${PORT}/api/imprimir/reimpresion`);
+    console.log(`   POST http://localhost:${PORT}/api/recargar-config`);
     console.log(`   GET  http://localhost:${PORT}/api/estado`);
 });

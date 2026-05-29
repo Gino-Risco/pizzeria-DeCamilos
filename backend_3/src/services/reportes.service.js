@@ -19,15 +19,15 @@ async function getVentasPorPeriodo(fecha_desde, fecha_hasta, agrupar_por = 'dia'
 
   const result = await query(
     `SELECT 
-            ${fechaFormat} AS periodo,
+            ${fechaFormat}::date AS periodo,
             COUNT(v.id) AS total_ventas,
             SUM(v.total) AS total_ingresos,
             SUM(v.descuento) AS total_descuentos,
             AVG(v.total) AS ticket_promedio,
             COUNT(DISTINCT v.cajero_id) AS cajeros_activos
      FROM pos.ventas v
-     WHERE v.created_at >= $1 
-       AND v.created_at <= $2
+     WHERE v.created_at::date >= $1::date 
+       AND v.created_at::date <= $2::date
        AND v.activo = TRUE
      GROUP BY ${fechaFormat}
      ORDER BY periodo ASC`,
@@ -58,8 +58,8 @@ async function getProductosMasVendidos(fecha_desde, fecha_hasta, limite = 20) {
      JOIN inventario.productos p ON p.id = vd.producto_id
      JOIN inventario.categorias c ON c.id = p.categoria_id
      JOIN pos.ventas v ON v.id = vd.venta_id
-     WHERE v.created_at >= $1 
-       AND v.created_at <= $2
+     WHERE v.created_at::date >= $1::date 
+       AND v.created_at::date <= $2::date
        AND v.activo = TRUE
        AND vd.activo = TRUE
        AND vd.es_incluido_menu = FALSE
@@ -84,8 +84,8 @@ async function getVentasPorCategoria(fecha_desde, fecha_hasta) {
      JOIN inventario.productos p ON p.id = vd.producto_id
      JOIN inventario.categorias c ON c.id = p.categoria_id
      JOIN pos.ventas v ON v.id = vd.venta_id
-     WHERE v.created_at >= $1 
-       AND v.created_at <= $2
+     WHERE v.created_at::date >= $1::date 
+       AND v.created_at::date <= $2::date
        AND v.activo = TRUE
        AND vd.activo = TRUE
        AND vd.es_incluido_menu = FALSE
@@ -105,8 +105,8 @@ async function getVentasPorMetodoPago(fecha_desde, fecha_hasta) {
             SUM(v.total) AS total_ingresos,
             AVG(v.total) AS ticket_promedio
      FROM pos.ventas v
-     WHERE v.created_at >= $1 
-       AND v.created_at <= $2
+     WHERE v.created_at::date >= $1::date 
+       AND v.created_at::date <= $2::date
        AND v.activo = TRUE
      GROUP BY v.metodo_pago
      ORDER BY total_ingresos DESC`,
@@ -127,8 +127,8 @@ async function getVentasPorMesa(fecha_desde, fecha_hasta) {
      FROM pos.ventas v
      JOIN pos.ordenes o ON o.id = v.orden_id
      JOIN pos.mesas m ON m.id = o.mesa_id
-     WHERE v.created_at >= $1 
-       AND v.created_at <= $2
+     WHERE v.created_at::date >= $1::date 
+       AND v.created_at::date <= $2::date
        AND v.activo = TRUE
        AND o.activo = TRUE
      GROUP BY m.id, m.numero
@@ -153,7 +153,7 @@ async function getVentasPorMesero(fecha_desde, fecha_hasta) {
      LEFT JOIN pos.ventas v ON v.orden_id = o.id AND v.activo = TRUE
      WHERE r.nombre = 'mesero'
        AND u.activo = TRUE
-       AND (v.created_at >= $1 AND v.created_at <= $2 OR v.created_at IS NULL)
+        AND (v.created_at::date >= $1::date AND v.created_at::date <= $2::date OR v.created_at IS NULL)
      GROUP BY u.id, u.nombre
      ORDER BY total_ingresos DESC`,
     [fecha_desde, fecha_hasta]
@@ -191,8 +191,8 @@ async function getDashboardResumen(fecha_desde) {
             COALESCE(SUM(total), 0) AS total_ingresos,
             COALESCE(AVG(total), 0) AS ticket_promedio
      FROM pos.ventas
-     -- FORZAMOS EL RANGO HORARIO DE PERÚ
-    WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = $1::date
+     -- FILTRAMOS POR RANGO HORARIO LOCAL
+    WHERE created_at::date = $1::date
        AND activo = TRUE`,
     [fechaConsulta]
   );
@@ -202,7 +202,7 @@ async function getDashboardResumen(fecha_desde) {
     `SELECT 
             COALESCE(SUM(total), 0) AS total_ingresos
      FROM pos.ventas
-     WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = ($1::date - INTERVAL '1 day')::date
+     WHERE created_at::date = ($1::date - INTERVAL '1 day')::date
        AND activo = TRUE`,
     [fechaConsulta]
   );
@@ -273,12 +273,12 @@ async function getVentasPorHora(fecha) {
 
   const result = await query(
     `SELECT 
-       -- Extraemos la hora ajustada a nuestra zona horaria para el gráfico
-       EXTRACT(HOUR FROM created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima') AS hora,
+       -- Extraemos la hora directamente del campo local para el gráfico
+       EXTRACT(HOUR FROM created_at) AS hora,
        COUNT(*) AS total_ventas,
        COALESCE(SUM(total), 0) AS total_ingresos
      FROM pos.ventas
-     WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = $1::date
+     WHERE created_at::date = $1::date
        AND activo = TRUE
      GROUP BY 1
      ORDER BY hora ASC`,
@@ -313,8 +313,8 @@ async function getVentasPorMetodoPagoHoy(fecha) {
         COUNT(*) AS total_ventas,
         COALESCE(SUM(total), 0) AS total_ingresos
      FROM pos.ventas
-     -- CAMBIO AQUÍ: Usamos el rango de tiempo exacto de Perú
-    WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = $1::date
+     -- Usamos el rango de tiempo local
+    WHERE created_at::date = $1::date
        AND activo = TRUE
      GROUP BY metodo_pago
      ORDER BY total_ingresos DESC`,
@@ -348,7 +348,7 @@ async function getTopProductosHoy(fecha, limite = 5) {
      JOIN inventario.productos p ON p.id = vd.producto_id
      JOIN inventario.categorias c ON c.id = p.categoria_id
      JOIN pos.ventas v ON v.id = vd.venta_id
-     WHERE (v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = $1::date
+      WHERE v.created_at::date = $1::date
        AND v.activo = TRUE
        AND vd.activo = TRUE
        AND vd.es_incluido_menu = FALSE
@@ -422,16 +422,16 @@ async function getRentabilidadPorPeriodo(fecha_desde, fecha_hasta, agrupar_por =
 
   switch (agrupar_por) {
     case 'dia':
-      fechaFormat = "DATE_TRUNC('day', v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')";
+      fechaFormat = "DATE_TRUNC('day', v.created_at)";
       break;
     case 'semana':
-      fechaFormat = "DATE_TRUNC('week', v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')";
+      fechaFormat = "DATE_TRUNC('week', v.created_at)";
       break;
     case 'mes':
-      fechaFormat = "DATE_TRUNC('month', v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')";
+      fechaFormat = "DATE_TRUNC('month', v.created_at)";
       break;
     default:
-      fechaFormat = "DATE_TRUNC('day', v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')";
+      fechaFormat = "DATE_TRUNC('day', v.created_at)";
   }
 
   const result = await query(
@@ -458,8 +458,8 @@ async function getRentabilidadPorPeriodo(fecha_desde, fecha_hasta, agrupar_por =
      FROM pos.ventas_detalle vd
      JOIN pos.ventas v ON v.id = vd.venta_id
      JOIN inventario.productos p ON p.id = vd.producto_id
-     WHERE (v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date >= $1::date 
-       AND (v.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date <= $2::date
+     WHERE v.created_at::date >= $1::date 
+       AND v.created_at::date <= $2::date
        AND v.activo = TRUE
        AND vd.activo = TRUE
      GROUP BY ${fechaFormat}

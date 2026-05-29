@@ -22,7 +22,7 @@ const reportesRoutes = require('./routes/reportes.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const alertasStockRoutes = require('./routes/alertas-stock.routes');
 const usuariosRoutes = require('./routes/usuarios.routes');
-const iaRoutes = require('./routes/ia.routes'); // NUEVA RUTA PARA IA
+const configuracionRoutes = require('./routes/configuracion.routes');
 const app = express();
 
 // Middleware global
@@ -31,7 +31,7 @@ app.use(helmet());
 // 👇 NUEVA CONFIGURACIÓN DE CORS 👇
 const allowedOrigins = [
   'http://localhost:5174',
-  'http://192.168.1.55:5174',
+  'http://192.168.1.51:5174',
   process.env.FRONTEND_URL // Por si acaso tienes otra URL en tu .env
 ].filter(Boolean); // Elimina cualquier valor falso (como undefined)
 
@@ -88,7 +88,7 @@ app.use('/api/reportes', reportesRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/alertas-stock', alertasStockRoutes);
 app.use('/api/usuarios', usuariosRoutes);
-app.use('/api/ia', iaRoutes); // NUEVA RUTA PARA IA
+app.use('/api/configuracion', configuracionRoutes);
 // 404
 app.use((req, res) => {
   res.status(404).json({ success: false, error: { message: 'Ruta no encontrada' } });
