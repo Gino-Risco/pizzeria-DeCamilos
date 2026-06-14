@@ -29,7 +29,7 @@ let config = {
     mensaje_ticket: '¡Gracias por su preferencia!',
 };
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
 
 const cargarConfig = async () => {
     try {
@@ -74,6 +74,10 @@ const conectarImpresora = () => {
     const device = new escpos.USB();
     const printer = new escpos.Printer(device);
     return { device, printer };
+};
+
+const esPagoYape = (metodo_pago, metodo_digital) => {
+    return metodo_pago === 'yape' || (metodo_pago === 'mixto' && metodo_digital === 'yape');
 };
 
 // Cabecera dinámica — usa config cargada desde la BD
@@ -239,34 +243,34 @@ app.post('/api/imprimir/caja', (req, res) => {
             printer.align('ct');
             printer.text('================================================');
             if (esPreCuenta) {
-                printer.text(limpiarTexto('ESTE DOCUMENTO NO ES'));
-                printer.text(limpiarTexto('UN COMPROBANTE DE PAGO'));
-                printer.text('================================================');
-                printer.feed(3).cut().close();
-                res.json({ success: true, message: 'Pre-cuenta impresa' });
-            } else {
-                // ── QR de Yape (solo si está configurado) ─────────────
-                if (config.qr_yape_contenido) {
+                if (typeof config.qr_yape_contenido === 'string' && config.qr_yape_contenido.trim()) {
                     printer
                         .text('')
                         .align('ct')
                         .text(limpiarTexto('Paga con YAPE:'))
-                        .qrimage(config.qr_yape_contenido, { type: 'png', mode: 'dM', size: 4 }, function () {
-                            printer
-                                .text('')
-                                .text('================================================')
-                                .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
-                                .text('================================================')
-                                .feed(3).cut().close();
-                            res.json({ success: true, message: 'Comprobante impreso con QR Yape' });
-                        });
-                } else {
-                    printer
+                        .qrcode(config.qr_yape_contenido.trim(), 0, 'M', 8)
+                        .text('')
+                        .text('================================================')
                         .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
                         .text('================================================')
                         .feed(3).cut().close();
-                    res.json({ success: true, message: 'Comprobante impreso' });
+                    res.json({ success: true, message: 'Pre-cuenta impresa con QR Yape' });
+                } else {
+                    printer
+                        .text(limpiarTexto('ESTE DOCUMENTO NO ES'))
+                        .text(limpiarTexto('UN COMPROBANTE DE PAGO'))
+                        .text('================================================')
+                        .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
+                        .text('================================================')
+                        .feed(3).cut().close();
+                    res.json({ success: true, message: 'Pre-cuenta impresa' });
                 }
+            } else {
+                printer
+                    .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
+                    .text('================================================')
+                    .feed(3).cut().close();
+                res.json({ success: true, message: 'Comprobante impreso' });
             }
         });
     } catch (e) {
@@ -418,24 +422,10 @@ app.post('/api/imprimir/reimpresion', (req, res) => {
                 printer.text(limpiarTexto(alinear('VUELTO:', `S/ ${vuelto.toFixed(2)}`)));
 
             printer.align('ct').text('================================================');
-            if (venta.metodo_pago === 'yape' && config.qr_yape_contenido) {
-                printer
-                    .text(limpiarTexto('Paga con YAPE:'))
-                    .qrimage(config.qr_yape_contenido, { type: 'png', mode: 'dM', size: 4 }, function () {
-                        printer
-                            .text('')
-                            .text('================================================')
-                            .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
-                            .text('================================================')
-                            .feed(3).cut().close();
-                        res.json({ success: true, message: 'Reimpresion enviada' });
-                    });
-            } else {
-                printer.text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'));
-                printer.text('================================================');
-                printer.feed(3).cut().close();
-                res.json({ success: true, message: 'Reimpresion enviada' });
-            }
+            printer.text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'));
+            printer.text('================================================');
+            printer.feed(3).cut().close();
+            res.json({ success: true, message: 'Reimpresion enviada' });
         });
     } catch (e) {
         console.error('Error impresora reimpresion:', e);
