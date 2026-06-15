@@ -31,7 +31,7 @@ app.use(helmet());
 // 👇 NUEVA CONFIGURACIÓN DE CORS 👇
 const allowedOrigins = [
   'http://localhost:5174',
-  'http://192.168.1.51:5174',
+  'http://192.168.18.15:5174',
   process.env.FRONTEND_URL // Por si acaso tienes otra URL en tu .env
 ].filter(Boolean); // Elimina cualquier valor falso (como undefined)
 
