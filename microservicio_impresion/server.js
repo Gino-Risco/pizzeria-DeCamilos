@@ -248,7 +248,9 @@ app.post('/api/imprimir/caja', (req, res) => {
                         .text('')
                         .align('ct')
                         .text(limpiarTexto('Paga con YAPE:'))
-                        .qrcode(config.qr_yape_contenido.trim(), 0, 'M', 8)
+                        // Al quitar el "0" forzamos a que use la configuración automática que Epson sí entiende
+                        // o pasamos 1 como versión inicial si queremos tamaño específico
+                        .qrcode(config.qr_yape_contenido.trim(), 1, 'M', 6)
                         .text('')
                         .text('================================================')
                         .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
