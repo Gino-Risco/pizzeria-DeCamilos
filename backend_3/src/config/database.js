@@ -19,7 +19,7 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000, // Supabase remoto puede tardar más de 2s al establecer la conexión
 });
 
 pool.on('connect', (client) => {
