@@ -24,7 +24,8 @@ module.exports = {
             cwd: "./microservicio_impresion",
             env: {
                 NODE_ENV: "production",
-                PORT: 3001
+                PORT: 3001,
+                BACKEND_URL: "http://localhost:4000"
             }
         }
     ]

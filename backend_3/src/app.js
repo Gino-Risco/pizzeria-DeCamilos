@@ -32,6 +32,7 @@ app.use(helmet());
 const allowedOrigins = [
   'http://localhost:5174',
   'http://192.168.18.15:5174',
+  'http://192.168.18.10:5174',
   process.env.FRONTEND_URL // Por si acaso tienes otra URL en tu .env
 ].filter(Boolean); // Elimina cualquier valor falso (como undefined)
 

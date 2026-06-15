@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { enviarImpresion } from '@/utils/printServer';
+import * as configService from '@/services/configuracion.service';
 
 export const Ventas = () => {
   const navigate = useNavigate();
@@ -123,7 +124,7 @@ export const Ventas = () => {
   // ---------------------------------------  // Fetch general config for headers & Yape flyers
   const { data: systemConfig } = useQuery({
     queryKey: ['configuracion'],
-    queryFn: getConfiguracion,
+    queryFn: configService.getConfiguracion,
     staleTime: 60000,
   });
 
@@ -144,9 +145,9 @@ export const Ventas = () => {
 
     // Cargar config actual de forma asíncrona si no está cargada en react-query
     let activeConfig = systemConfig;
-    if (!activeConfig) {
+      if (!activeConfig) {
       try {
-        activeConfig = await getConfiguracion();
+        activeConfig = await configService.getConfiguracion();
       } catch {
         activeConfig = {
           nombre_restaurante: "D' CAMILOS",
