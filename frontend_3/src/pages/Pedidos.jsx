@@ -4,9 +4,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, ChefHat, Send, DollarSign, ArrowLeft, Receipt, Plus, History } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { enviarImpresion } from '@/utils/printServer';
+import { mostrarEImprimirTicket } from '@/utils/ticket';
+import { formatSoloHora } from '@/utils/formatFecha';
 import { ordenesService } from '@/services/ordenes.service';
 import { productosService } from '@/services/productos.service';
 import { categoriasService } from '@/services/categorias.service';
+import * as configService from '@/services/configuracion.service';
+import { useAuthStore } from '@/store/auth.store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +27,7 @@ export const Pedidos = () => {
   const queryClient = useQueryClient();
   const ordenId = searchParams.get('orden_id');
 
-  const user = { rol: 'administrador' };
+  const { user } = useAuthStore();
   const isAdminOCajero = user?.rol === 'administrador' || user?.rol === 'cajero';
 
   // --- ESTADOS LOCALES ---
@@ -89,6 +93,12 @@ export const Pedidos = () => {
   const { data: categoriasDB } = useQuery({
     queryKey: ['categorias'],
     queryFn: async () => await categoriasService.getAll(),
+  });
+
+  const { data: systemConfig } = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: configService.getConfiguracion,
+    staleTime: 60000,
   });
 
   // --- HELPER DE EMOJIS ---
@@ -332,7 +342,7 @@ export const Pedidos = () => {
     const contenido = `
 ══════════════════════════════════
 ${esLlevar ? `🛍️ PARA LLEVAR: ${orden.nombre_cliente || 'SIN NOMBRE'}` : `🍳 COCINA - Mesa ${orden.mesa_numero}`}
-#${orden.numero_comanda} - ${new Date().toLocaleTimeString()}
+#${orden.numero_comanda} - ${formatSoloHora(new Date())}
 ──────────────────────────────────
 ${detalles.map(d => {
       let linea = `${d.cantidad}x ${d.es_menu ? 'MENÚ: ' : ''}${d.producto_nombre}`;
@@ -352,45 +362,32 @@ ${detalles.map(d => {
     await enviarImpresion('/api/imprimir/cocina', { orden, detalles });
   }, []);
 
+  // Config del negocio con fallback, para armar el ticket (nombre, RUC, QR Yape, etc.)
+  const obtenerConfigActiva = useCallback(async () => {
+    if (systemConfig) return systemConfig;
+    try {
+      return await configService.getConfiguracion();
+    } catch {
+      return {
+        nombre_restaurante: "D' CAMILOS",
+        ruc: "20123456789",
+        direccion: "Jr. Belen 185 - Esperanza Parte Baja",
+        telefono: "942 685 506",
+        mensaje_ticket: "¡Gracias por su preferencia!"
+      };
+    }
+  }, [systemConfig]);
+
   const imprimirComprobanteCaja = useCallback(async (orden) => {
-    const detallesFiltrados = (orden.detalles || []).filter(d => !d.es_incluido_menu);
-    const subtotalBruto = detallesFiltrados.reduce((s, d) => s + parseFloat(d.subtotal || 0), 0);
-    const descuento = parseFloat(orden.descuento_total || 0);
-    const totalNeto = Math.max(0, subtotalBruto - descuento);
-    const subtotalSinIgv = totalNeto / 1.18;
-    const igvCalculado = totalNeto - subtotalSinIgv;
+    const activeConfig = await obtenerConfigActiva();
+    await mostrarEImprimirTicket(orden, false, activeConfig);
+  }, [obtenerConfigActiva]);
 
-    const contenido = `
-══════════════════════════
-      PIZZERÍA
-     D' CAMILOS
-   RUC: 20123456789
-══════════════════════════
-Comanda #${orden.numero_comanda}
-${orden.nombre_cliente ? `Cliente: ${orden.nombre_cliente}` : `Mesa: ${orden.mesa_numero}`}
-Fecha: ${new Date().toLocaleString()}
-──────────────────────────
-${detallesFiltrados.map(d =>
-      `${d.cantidad}x ${d.es_menu ? 'MENÚ - ' : ''}${d.producto_nombre}\n   S/ ${parseFloat(d.subtotal).toFixed(2)}`
-    ).join('\n')}
-──────────────────────────
-SUBTOTAL BRUTO: S/ ${subtotalBruto.toFixed(2)}
-${descuento > 0 ? `DESCUENTO:    - S/ ${descuento.toFixed(2)}\n` : ''}──────────────────────────
-OP. GRAVADA:   S/ ${subtotalSinIgv.toFixed(2)}
-IGV (18%):     S/ ${igvCalculado.toFixed(2)}
-TOTAL:         S/ ${totalNeto.toFixed(2)}
-══════════════════════════
-   ¡Gracias por su compra!
-    `.trim();
-
-    console.log('🖨️ COMPROBANTE CAJA:\n', contenido);
-    Swal.fire({
-      title: '🧾 Comprobante',
-      html: `<pre style="text-align:left;font-family:monospace;font-size:12px;">${contenido}</pre>`,
-      confirmButtonText: 'Imprimido'
-    });
-    await enviarImpresion('/api/imprimir/caja', { orden });
-  }, []);
+  const handleImprimirPreCuenta = useCallback(async () => {
+    if (!orden) return;
+    const activeConfig = await obtenerConfigActiva();
+    await mostrarEImprimirTicket(orden, true, activeConfig);
+  }, [orden, obtenerConfigActiva]);
 
   // --- HANDLERS DE NEGOCIO (MEMORIZADOS CON USECALLBACK) ---
   const handleAgregarProducto = useCallback((producto) => {
@@ -1125,6 +1122,17 @@ TOTAL:         S/ ${totalNeto.toFixed(2)}
                 ? 'Enviando...'
                 : `Enviar a Cocina (${orden.detalles.filter(d => !d.enviado_cocina).length} pdtes)`
               }
+            </Button>
+          )}
+
+          {orden.estado !== 'cobrada' && orden.estado !== 'cancelada' && (
+            <Button
+              onClick={handleImprimirPreCuenta}
+              variant="outline"
+              className="w-full md:w-auto"
+            >
+              <Receipt className="h-4 w-4 mr-2" />
+              Imprimir Pre-Cuenta
             </Button>
           )}
 

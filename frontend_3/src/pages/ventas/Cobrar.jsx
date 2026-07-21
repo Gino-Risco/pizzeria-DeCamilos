@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { enviarImpresion } from '@/utils/printServer';
 import * as configService from '@/services/configuracion.service';
+import { mostrarEImprimirTicket } from '@/utils/ticket';
 
 export const Ventas = () => {
   const navigate = useNavigate();
@@ -130,22 +130,9 @@ export const Ventas = () => {
 
   // Imprimir ticket (pre-cuenta o comprobante)
   const imprimirComprobante = async (venta, esPreCuenta = false) => {
-    const identificador = !venta.mesa_id
-      ? `CLIENTE: ${venta.nombre_cliente || 'Para Llevar'}`
-      : `Mesa: ${venta.mesa_numero}`;
-
-    // 🧮 LÓGICA MATEMÁTICA CORRECTA PARA TICKETS
-    const subtotalBruto = parseFloat(venta.subtotal || calcularTotal(venta.detalles));
-    const descuentoTicket = parseFloat(venta.descuento_total || 0);
-    const totalTicket = parseFloat(venta.total || (subtotalBruto - descuentoTicket));
-
-    // IGV extraído del total final
-    const subtotalSinIgv = totalTicket / 1.18;
-    const igvCalculado = totalTicket - subtotalSinIgv;
-
     // Cargar config actual de forma asíncrona si no está cargada en react-query
     let activeConfig = systemConfig;
-      if (!activeConfig) {
+    if (!activeConfig) {
       try {
         activeConfig = await configService.getConfiguracion();
       } catch {
@@ -159,83 +146,7 @@ export const Ventas = () => {
       }
     }
 
-    // Generar html para SweetAlert2
-    const htmlDetalles = venta.detalles?.filter(d => !d.es_incluido_menu).map(d => `
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-        <span>${d.cantidad}x ${d.producto_nombre}</span>
-        <span>S/ ${parseFloat(d.subtotal).toFixed(2)}</span>
-      </div>
-    `).join('') || '<div style="color:#888;text-align:center;">Sin productos</div>';
-
-    let pieHtml = '';
-    if (!esPreCuenta) {
-      if ((venta.metodo_pago === 'yape' || (venta.metodo_pago === 'mixto' && venta.metodo_digital === 'yape')) && activeConfig.qr_yape_url) {
-        pieHtml = `
-          <div style="text-align:center;margin:15px 0;padding:10px;border:1px border-dashed #c084fc;background-color:#faf5ff;border-radius:12px;">
-            <p style="color:#7e22ce;font-weight:bold;font-size:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">📱 Paga con YAPE:</p>
-            <img src="${activeConfig.qr_yape_url}" style="max-width:120px;height:auto;margin:0 auto;border-radius:8px;display:block;" />
-          </div>
-        `;
-      }
-      pieHtml += `
-        <div style="text-align:center;margin-top:10px;font-style:italic;font-weight:bold;color:#1f2937;font-size:12px;">
-          "${activeConfig.mensaje_ticket || '¡Gracias por su preferencia!'}"
-        </div>
-      `;
-    } else {
-      pieHtml = `
-        <div style="text-align:center;margin-top:10px;font-weight:bold;color:#b91c1c;border:1px dashed #f87171;padding:8px;border-radius:8px;background-color:#fef2f2;font-size:11px;">
-          ESTE DOCUMENTO NO ES<br/>UN COMPROBANTE DE PAGO
-        </div>
-      `;
-    }
-
-    const swalHtml = `
-      <div style="text-align:left;font-family:monospace;font-size:12px;color:#374151;line-height:1.5;padding:15px;background:#fff;border-radius:12px;box-shadow:inset 0 0 10px rgba(0,0,0,0.05);border:1px solid #e5e7eb;">
-        <div style="text-align:center;margin-bottom:12px;border-bottom:1px dashed #ccc;padding-bottom:12px;">
-          <strong style="font-size:14px;color:#111827;text-transform:uppercase;letter-spacing:0.5px;">${activeConfig.nombre_restaurante || "D' CAMILOS"}</strong><br/>
-          ${activeConfig.ruc ? `<span style="color:#4b5563;">RUC: ${activeConfig.ruc}</span><br/>` : ''}
-          <span style="color:#6b7280;">${activeConfig.direccion || ''}</span><br/>
-          ${activeConfig.telefono ? `<span style="color:#6b7280;">Delivery: ${activeConfig.telefono}</span>` : ''}
-        </div>
-        <div style="margin-bottom:8px;color:#4b5563;">
-          <strong>TICKET #${venta.numero_ticket || 'S/N'}</strong><br/>
-          <strong>${identificador}</strong><br/>
-          Fecha: ${new Date(venta.created_at || Date.now()).toLocaleString()}<br/>
-        </div>
-        <div style="border-top:1px dashed #ccc;border-bottom:1px dashed #ccc;padding:8px 0;margin:8px 0;color:#1f2937;">
-          ${htmlDetalles}
-        </div>
-        <div style="text-align:right;margin-bottom:8px;color:#4b5563;">
-          <div style="display:flex;justify-content:space-between;"><span>SUBTOTAL BRUTO:</span><span>S/ ${subtotalBruto.toFixed(2)}</span></div>
-          ${descuentoTicket > 0 ? `<div style="display:flex;justify-content:space-between;color:#ea580c;font-weight:bold;"><span>DESCUENTO:</span><span>- S/ ${descuentoTicket.toFixed(2)}</span></div>` : ''}
-          <div style="display:flex;justify-content:space-between;"><span>OP. GRAVADA:</span><span>S/ ${subtotalSinIgv.toFixed(2)}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span>IGV (18%):</span><span>S/ ${igvCalculado.toFixed(2)}</span></div>
-          <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:13px;color:#111827;margin-top:4px;border-top:1px solid #eee;padding-top:4px;"><span>TOTAL A PAGAR:</span><span>S/ ${totalTicket.toFixed(2)}</span></div>
-        </div>
-        ${!esPreCuenta ? `
-        <div style="border-top:1px dashed #ccc;padding-top:8px;margin-top:8px;color:#4b5563;font-size:11px;background-color:#f9fafb;padding:8px;border-radius:8px;">
-          <div style="display:flex;justify-content:space-between;"><span>Método de Pago:</span><strong style="color:#111827;">${venta.metodo_pago?.toUpperCase() || 'EFECTIVO'}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span>Monto Recibido:</span><span>S/ ${parseFloat(venta.monto_pagado || 0).toFixed(2)}</span></div>
-          <div style="display:flex;justify-content:space-between;font-weight:bold;color:#16a34a;margin-top:2px;"><span>Vuelto:</span><span>S/ ${parseFloat(venta.vuelto || 0).toFixed(2)}</span></div>
-        </div>
-        ` : ''}
-        <div style="border-top:1px dashed #ccc;margin-top:10px;padding-top:10px;">
-          ${pieHtml}
-        </div>
-      </div>
-    `;
-
-    Swal.fire({
-      title: esPreCuenta ? '🧾 Pre-Cuenta Generada' : '🧾 Comprobante de Pago',
-      html: swalHtml,
-      confirmButtonText: '✓ Entendido',
-      confirmButtonColor: esPreCuenta ? '#3b82f6' : '#22c55e',
-      width: '400px',
-    });
-
-    // 👇 Enviar a la impresora térmica USB (funciona desde móvil y PC)
-    await enviarImpresion('/api/imprimir/caja', { orden: venta, esPreCuenta });
+    await mostrarEImprimirTicket(venta, esPreCuenta, activeConfig);
   };
 
   const handleSeleccionarOrden = (orden) => {
