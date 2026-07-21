@@ -13,6 +13,7 @@ import {
   Printer
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { formatFechaHora } from '@/utils/formatFecha';
 import { ordenesService } from '@/services/ordenes.service';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -121,7 +122,7 @@ export const HistorialPedidos = () => {
             <div style="background: #f8fafc; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 13px; color: #334155; border: 1px solid #e2e8f0;">
               <p><strong>${esLlevar ? '🛍️ Cliente:' : '🍽️ Mesa:'}</strong> ${esLlevar ? (orden.nombre_cliente || 'Para Llevar') : orden.mesa_numero}</p>
               <p><strong>👨‍🍳 Mesero:</strong> ${orden.mesero_nombre}</p>
-              <p><strong>📅 Fecha:</strong> ${new Date(orden.created_at).toLocaleString('es-PE')}</p>
+              <p><strong>📅 Fecha:</strong> ${formatFechaHora(orden.created_at)}</p>
               <p style="margin-top:4px;"><strong>Estado:</strong> <span style="text-transform: uppercase; font-weight: bold;">${orden.estado}</span></p>
             </div>
             
@@ -259,7 +260,7 @@ export const HistorialPedidos = () => {
                         return (
                           <tr key={orden.id} className={`bg-white border-b hover:bg-gray-50 ${orden.estado === 'cancelada' ? 'opacity-70 bg-red-50' : ''}`}>
                             <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
-                              {new Date(orden.created_at).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit' })}
+                              {formatFechaHora(orden.created_at)}
                             </td>
                             <td className="px-6 py-4 font-mono font-medium text-gray-500">#{orden.numero_comanda?.split('-')[2] || orden.id}</td>
                             <td className="px-6 py-4 font-bold text-gray-800">

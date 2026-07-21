@@ -6,6 +6,7 @@ import { comprasService } from '@/services/compras.service';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { formatFechaSoloDia } from '@/utils/formatFecha';
 
 export const CompraDetalle = () => {
   const { id } = useParams();
@@ -34,7 +35,7 @@ export const CompraDetalle = () => {
 ════════════════════════════════════
 Proveedor: ${compra.proveedor_nombre}
 Doc:       ${formatComprobante(compra)}
-Fecha:     ${new Date(compra.fecha_emision || compra.created_at).toLocaleDateString('es-PE', { timeZone: 'UTC' })}
+Fecha:     ${formatFechaSoloDia(compra.fecha_emision || compra.created_at)}
 Usuario:   ${compra.usuario_nombre}
 ────────────────────────────────────
 PRODUCTOS:
@@ -123,7 +124,7 @@ ${parseFloat(compra.igv) > 0 ? `Subtotal Base: S/ ${parseFloat(compra.subtotal).
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-gray-500 mb-1">Fecha de Emisión</p>
-            <p className="font-semibold">{new Date(compra.fecha_emision || compra.created_at).toLocaleDateString('es-PE', { timeZone: 'UTC' })}</p>
+            <p className="font-semibold">{formatFechaSoloDia(compra.fecha_emision || compra.created_at)}</p>
           </CardContent>
         </Card>
         <Card>

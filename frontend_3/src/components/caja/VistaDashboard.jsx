@@ -12,15 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MovimientoModal } from './MovimientoModal';
 import { ArqueoModal } from './ArqueoModal';
 import { CierreModal } from './CierreModal';
+import { formatFechaHora, formatSoloFecha, formatSoloHora } from '@/utils/formatFecha';
 
 const UMBRAL_DIFERENCIA_ALERTA = 50; // S/ 50
-
-const parseFecha = (rawDate) => {
-    if (!rawDate) return new Date();
-    const str = String(rawDate);
-    const tieneZona = str.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(str);
-    return new Date(tieneZona ? str : str + 'Z');
-};
 
 export const VistaDashboard = React.memo(({ onVolver }) => {
     const queryClient = useQueryClient();
@@ -247,7 +241,6 @@ export const VistaDashboard = React.memo(({ onVolver }) => {
 
         // Formatear la lista de movimientos para el XLSX
         const dataToExport = movimientos.map((mov) => {
-            const fechaObj = parseFecha(mov.created_at);
             const tipoMostrado = mov.tipo === 'retiro' && mov.monto < 0 ? 'ingreso' : mov.tipo;
             const descripcion = mov.descripcion || (mov.numero_ticket ? `Venta #${mov.numero_ticket}` : '-');
             const metodo = mov.metodo_pago_venta || '-';
@@ -255,8 +248,8 @@ export const VistaDashboard = React.memo(({ onVolver }) => {
             const signo = ['venta', 'ingreso', 'apertura'].includes(tipoMostrado) ? '' : '-';
 
             return {
-                'Fecha': fechaObj.toLocaleDateString('es-PE'),
-                'Hora': fechaObj.toLocaleTimeString('es-PE'),
+                'Fecha': formatSoloFecha(mov.created_at),
+                'Hora': formatSoloHora(mov.created_at),
                 'Tipo': tipoMostrado.toUpperCase(),
                 'Descripción': descripcion,
                 'Método de Pago': metodo.toUpperCase(),
@@ -310,7 +303,7 @@ export const VistaDashboard = React.memo(({ onVolver }) => {
    REPORTE DE CIERRE
    Turno: ${turnoStr}
 ══════════════════════════
-Fecha: ${parseFecha(cierre.created_at).toLocaleString('es-PE')}
+Fecha: ${formatFechaHora(cierre.created_at)}
 Cajero: ${cajeroNombre}
 ──────────────────────────
 📊 1. CONTROL DE VENTAS (TOTAL)
@@ -393,7 +386,7 @@ ${cierre.observaciones ? `Obs: ${cierre.observaciones}` : ''}
                     <h1 className="text-3xl font-bold text-gray-900 font-sans">Caja</h1>
                     <p className="text-gray-500 mt-1">
                         Turno: {cajaAbierta.usuario_nombre} • Apertura:{' '}
-                        {parseFecha(cajaAbierta.created_at).toLocaleTimeString('es-PE')}
+                        {formatSoloHora(cajaAbierta.created_at)}
                     </p>
                 </div>
                 <div className="flex gap-2">
@@ -423,7 +416,7 @@ ${cierre.observaciones ? `Obs: ${cierre.observaciones}` : ''}
                 <h2 className="text-2xl font-bold">Reporte de Turno en Caja</h2>
                 <p className="text-gray-500">
                     Cajero: {cajaAbierta?.usuario_nombre} • Fecha:{' '}
-                    {new Date().toLocaleDateString('es-PE')}
+                    {formatSoloFecha(new Date())}
                 </p>
                 <hr className="my-2 border-gray-300" />
             </div>
@@ -564,7 +557,7 @@ ${cierre.observaciones ? `Obs: ${cierre.observaciones}` : ''}
                                         return (
                                             <tr key={mov.id} className="border-b hover:bg-gray-50 print:border-gray-200">
                                                 <td className="py-3 px-4 print:py-2 text-sm">
-                                                    {parseFecha(mov.created_at).toLocaleTimeString('es-PE')}
+                                                    {formatSoloHora(mov.created_at)}
                                                 </td>
                                                 <td className="py-3 px-4 print:py-2">
                                                     <Badge

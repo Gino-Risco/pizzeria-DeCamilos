@@ -10,13 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-
-const parseFecha = (rawDate) => {
-    if (!rawDate) return new Date();
-    const str = String(rawDate);
-    const tieneZona = str.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(str);
-    return new Date(tieneZona ? str : str + 'Z');
-};
+import { formatSoloFecha } from '@/utils/formatFecha';
 
 export const VistaHistorial = React.memo(({ onIrADashboard }) => {
     const queryClient = useQueryClient();
@@ -66,7 +60,7 @@ export const VistaHistorial = React.memo(({ onIrADashboard }) => {
         }
 
         const dataToExport = historial.map((caja) => {
-            const fecha = parseFecha(caja.created_at).toLocaleDateString('es-PE');
+            const fecha = formatSoloFecha(caja.created_at);
             const cajero = caja.usuario_nombre || '-';
             const fondo = parseFloat(caja.monto_inicial || 0);
             const ventas = parseFloat(caja.total_ventas || 0);
@@ -138,7 +132,7 @@ export const VistaHistorial = React.memo(({ onIrADashboard }) => {
                     </h2>
                     <p style="margin: 4px 0 0; color: #64748b;">Responsable: <strong>${caja.usuario_nombre}</strong></p>
                     <p style="margin: 2px 0 0; color: #64748b;">
-                        Apertura: ${parseFecha(caja.created_at).toLocaleDateString('es-PE')}
+                        Apertura: ${formatSoloFecha(caja.created_at)}
                     </p>
                 </div>
 
@@ -291,7 +285,7 @@ export const VistaHistorial = React.memo(({ onIrADashboard }) => {
                                     {historialPaginado.map((caja) => (
                                         <tr key={caja.id} className="hover:bg-gray-50">
                                             <td className="px-8 py-4 font-medium">
-                                                {parseFecha(caja.created_at).toLocaleDateString('es-PE')}
+                                                {formatSoloFecha(caja.created_at)}
                                             </td>
                                             <td className="px-6 py-4">{caja.usuario_nombre}</td>
                                             <td className="px-6 py-4 text-right">

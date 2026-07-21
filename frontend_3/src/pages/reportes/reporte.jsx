@@ -8,6 +8,7 @@ import {
   Wallet
 } from 'lucide-react';
 import {reportesService} from '@/services/reportes.service';
+import { formatFechaSoloDia } from '@/utils/formatFecha';
 // Asume que tienes configurado axios o tu propia instancia de api
 // import api from '@/lib/api'; 
 
@@ -181,10 +182,7 @@ export const ReportesPage = () => {
                 data.map((fila, i) => (
                   <tr key={i} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 font-medium text-slate-800">
-                      {new Date(fila.periodo).toLocaleDateString('es-PE', { 
-                        timeZone: 'UTC', // Usamos UTC porque la base de datos ya lo ajustó a Lima
-                        day: '2-digit', month: 'short', year: 'numeric' 
-                      })}
+                      {formatFechaSoloDia(fila.periodo, { month: 'short' })}
                     </td>
                     <td className="px-6 py-4 text-right">{formatoMoneda(fila.ingresos_brutos)}</td>
                     <td className="px-6 py-4 text-right text-red-500">{formatoMoneda(fila.costo_insumos)}</td>

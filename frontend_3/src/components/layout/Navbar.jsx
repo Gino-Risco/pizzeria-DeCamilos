@@ -5,7 +5,8 @@ import { useAuthStore } from '@/store/auth.store';
 // 👇 Recibimos la función onMenuClick como prop 👇
 export const Navbar = ({ onMenuClick }) => {
   const { user } = useAuthStore();
-  const currentDate = new Date().toLocaleDateString('es-ES', {
+  const currentDate = new Date().toLocaleDateString('es-PE', {
+    timeZone: 'America/Lima',
     weekday: 'long',
     year: 'numeric',
     month: 'long',

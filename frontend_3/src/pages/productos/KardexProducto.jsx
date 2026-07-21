@@ -8,6 +8,7 @@ import { productosService } from '@/services/productos.service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
+import { formatSoloFecha, formatSoloHora } from '@/utils/formatFecha';
 
 // ── Configuración visual por tipo de movimiento ──────────────────────────────
 const TIPO_CONFIG = {
@@ -27,13 +28,10 @@ const SALIDAS  = ['venta', 'salida_cocina', 'merma', 'ajuste_salida'];
 const getTipoConfig = (tipo) =>
   TIPO_CONFIG[tipo] || { label: tipo, color: 'bg-gray-100 text-gray-700 border-gray-200', icon: ClipboardList, signo: '', signoColor: 'text-gray-600', esEntrada: null };
 
-const formatFecha = (fechaStr) => {
-  const d = new Date(fechaStr);
-  return {
-    fecha: d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-    hora:  d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }),
-  };
-};
+const formatFecha = (fechaStr) => ({
+  fecha: formatSoloFecha(fechaStr),
+  hora: formatSoloHora(fechaStr),
+});
 
 // ── UTILIDAD: Formato inteligente de números (Quita el .00 si es entero) ───
 const formatNumber = (num) => {

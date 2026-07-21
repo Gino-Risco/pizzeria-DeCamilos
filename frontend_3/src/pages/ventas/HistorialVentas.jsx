@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { enviarImpresion } from '@/utils/printServer';
 import * as configService from '@/services/configuracion.service';
+import { formatFechaHora } from '@/utils/formatFecha';
 
 export const HistorialVentas = () => {
   const queryClient = useQueryClient();
@@ -89,7 +90,7 @@ export const HistorialVentas = () => {
     const cabeceras = ['Fecha', 'Comanda', 'Mesa/Cliente', 'Cajero', 'Metodo Pago', 'Total (S/)', 'Estado'];
 
     const filas = ventasFiltradas.map(v => {
-      const fecha = new Date(v.created_at).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const fecha = formatFechaHora(v.created_at);
       const comanda = v.numero_comanda?.split('-')[2] || v.id;
       const estado = v.activo ? 'Pagado' : 'Anulado';
       const cajero = v.cajero_nombre?.replace(/,/g, '');
@@ -138,7 +139,7 @@ export const HistorialVentas = () => {
           <div style="text-align: left; font-family: monospace; border-top: 1px dashed #ccc; padding-top: 10px;">
             <p><strong>Cajero:</strong> ${venta.cajero_nombre}</p>
             <p><strong>Mesa:</strong> ${venta.mesa_numero}</p>
-            <p><strong>Fecha:</strong> ${new Date(venta.created_at).toLocaleString()}</p>
+            <p><strong>Fecha:</strong> ${formatFechaHora(venta.created_at)}</p>
             <div style="border-top: 1px dashed #ccc; margin: 10px 0; padding-top: 10px;">
               ${detallesHtml}
             </div>
@@ -233,7 +234,7 @@ export const HistorialVentas = () => {
           <div style="margin-bottom:8px;color:#4b5563;">
             <strong>TICKET #${venta.numero_ticket || venta.id}</strong><br/>
             <strong>${identificador}</strong><br/>
-            Fecha: ${new Date(venta.created_at).toLocaleString()}<br/>
+            Fecha: ${formatFechaHora(venta.created_at)}<br/>
           </div>
           <div style="border-top:1px dashed #ccc;border-bottom:1px dashed #ccc;padding:8px 0;margin:8px 0;color:#1f2937;">
             ${htmlDetalles}
@@ -371,7 +372,7 @@ export const HistorialVentas = () => {
 
         <div className="hidden print:block text-center mb-4">
           <h2 className="text-2xl font-bold">Reporte de Ventas {selectedCajero !== 'Todos' ? `- Caja: ${selectedCajero}` : ''}</h2>
-          <p className="text-gray-500">Fecha de generación: {new Date().toLocaleString('es-PE')}</p>
+          <p className="text-gray-500">Fecha de generación: {formatFechaHora(new Date())}</p>
           <hr className="my-2 border-gray-300" />
         </div>
 
@@ -402,9 +403,7 @@ export const HistorialVentas = () => {
                       currentItems.map((venta) => (
                         <tr key={venta.id} className={`bg-white border-b hover:bg-gray-50 print:border-gray-300 ${!venta.activo ? 'opacity-70 bg-red-50 print:bg-red-50' : ''}`}>
                           <td className="px-6 py-4 print:px-2 print:py-1 font-medium text-gray-900 whitespace-nowrap">
-                            {new Date(venta.created_at).toLocaleString('es-PE', {
-                              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-                            })}
+                            {formatFechaHora(venta.created_at)}
                           </td>
                           <td className="px-6 py-4 print:px-2 print:py-1 font-mono">{venta.numero_comanda?.split('-')[2] || venta.id}</td>
                           <td className="px-6 py-4 print:px-2 print:py-1">{venta.mesa_numero}</td>

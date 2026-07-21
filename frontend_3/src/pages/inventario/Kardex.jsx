@@ -6,6 +6,7 @@ import { productosService } from '@/services/productos.service';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { formatSoloFecha } from '@/utils/formatFecha';
 
 export const Kardex = () => {
   // Estados para los Filtros
@@ -45,12 +46,8 @@ export const Kardex = () => {
   const totalPages = Math.ceil(movimientos.length / itemsPerPage);
 
   // Formateadores
-  const formatFecha = (fecha) => {
-    // CORRECCIÓN: Solo muestra la fecha, sin la hora
-    return new Date(fecha).toLocaleDateString('es-PE', {
-      day: '2-digit', month: '2-digit', year: 'numeric'
-    });
-  };
+  // CORRECCIÓN: Solo muestra la fecha, sin la hora
+  const formatFecha = formatSoloFecha;
 
   const formatMoney = (monto) => {
     // CORRECCIÓN: Forzamos a que siempre tenga 2 decimales exactos
@@ -108,7 +105,7 @@ export const Kardex = () => {
 
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Reporte_Kardex_${new Date().toLocaleDateString('es-PE').replace(/\//g, '-')}.csv`);
+    link.setAttribute("download", `Reporte_Kardex_${formatSoloFecha(new Date()).replace(/\//g, '-')}.csv`);
 
     document.body.appendChild(link);
     link.click();

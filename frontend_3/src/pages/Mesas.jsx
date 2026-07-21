@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 // 👇 IMPORTAMOS EL STORE DE AUTENTICACIÓN 👇
 import { useAuthStore } from '@/store/auth.store';
+import { formatSoloFecha } from '@/utils/formatFecha';
 
 export const Mesas = () => {
   const navigate = useNavigate();
@@ -382,7 +383,7 @@ export const Mesas = () => {
                 <div>
                   <p className="text-sm text-gray-500">Creada</p>
                   <p className="font-medium text-gray-900">
-                    {new Date(selectedMesa.created_at).toLocaleDateString()}
+                    {formatSoloFecha(selectedMesa.created_at)}
                   </p>
                 </div>
               </div>

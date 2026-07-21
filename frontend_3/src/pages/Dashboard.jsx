@@ -8,12 +8,9 @@ import {
 import VentasPorHoraChart from '@/components/dashboard/charts/VentasPorHoraChart';
 import MetodosPagoChart from '@/components/dashboard/charts/MetodosPagoChart';
 import TopProductosChart from '@/components/dashboard/charts/TopProductosChart';
+import { formatSoloHora } from '@/utils/formatFecha';
 // === HELPERS DE FORMATO ===
-const formatearHora = (fechaISO) => {
-  if (!fechaISO) return '';
-  const fecha = new Date(fechaISO);
-  return fecha.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-};
+const formatearHora = (fechaISO) => formatSoloHora(fechaISO);
 
 const obtenerEstadoLegible = (estado) => {
   const estados = {

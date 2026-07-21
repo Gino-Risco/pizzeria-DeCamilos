@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { formatFechaSoloDia } from '@/utils/formatFecha';
 
 export const Compras = () => {
   const navigate = useNavigate();
@@ -52,8 +53,8 @@ export const Compras = () => {
 
   const formatMonto = (monto) => `S/ ${parseFloat(monto || 0).toFixed(2)}`;
   
-  // Usamos zonas horarias seguras para la fecha
-  const formatDate = (date) => new Date(date).toLocaleDateString('es-PE', { timeZone: 'UTC' });
+  // fecha_emision es columna DATE pura -> formatFechaSoloDia usa UTC a propósito
+  const formatDate = formatFechaSoloDia;
 
   // NUEVO: Formateador del comprobante contable
   const formatComprobante = (compra) => {

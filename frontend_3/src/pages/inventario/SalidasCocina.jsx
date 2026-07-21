@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { formatFechaHora } from '@/utils/formatFecha';
 
 export const SalidasCocina = () => {
     const queryClient = useQueryClient();
@@ -119,7 +120,7 @@ export const SalidasCocina = () => {
         }
     };
 
-    const formatDate = (date) => new Date(date).toLocaleString('es-PE');
+    const formatDate = formatFechaHora;
 
     return (
         <div className="space-y-6 pb-10">

@@ -25,13 +25,11 @@ import Swal from 'sweetalert2';
 import jsQR from 'jsqr';
 import { api } from '@/services/api';
 import { getConfiguracion, updateConfiguracion, recargarConfigImpresora } from '@/services/configuracion.service';
+import { formatFechaHora } from '@/utils/formatFecha';
 
 // ─── Preview del ticket (simulación visual hiperrealista) ───────────────────
 const TicketPreview = ({ form }) => {
-  const ahora = new Date().toLocaleString('es-PE', {
-    hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  });
+  const ahora = formatFechaHora(new Date());
 
   return (
     <div className="relative bg-white rounded-lg p-6 shadow-2xl border border-gray-200 font-mono text-[11px] text-gray-800 leading-relaxed max-w-[320px] mx-auto select-none overflow-hidden transition-all duration-300 hover:shadow-purple-100">
