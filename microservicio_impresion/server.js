@@ -140,7 +140,7 @@ app.post('/api/imprimir/cocina', (req, res) => {
                 .text('================================================')
                 .align('lt')
                 .text(limpiarTexto(`Comanda: #${orden.numero_comanda || 'S/N'}`))
-                .text(limpiarTexto(`Hora:    ${new Date().toLocaleTimeString('es-PE', { hour12: false })}`))
+                .text(limpiarTexto(`Hora:    ${new Date().toLocaleTimeString('es-PE', { hour12: false, timeZone: 'America/Lima' })}`))
                 .text('------------------------------------------------');
 
             detalles.forEach(d => {
@@ -192,7 +192,8 @@ app.post('/api/imprimir/caja', (req, res) => {
 
             const fechaLimpia = new Date().toLocaleString('es-PE', {
                 hour12: false, year: 'numeric', month: '2-digit',
-                day: '2-digit', hour: '2-digit', minute: '2-digit'
+                day: '2-digit', hour: '2-digit', minute: '2-digit',
+                timeZone: 'America/Lima'
             });
             const identificador = !orden.mesa_id
                 ? `CLIENTE: ${orden.nombre_cliente || 'Para Llevar'}`
@@ -247,16 +248,26 @@ app.post('/api/imprimir/caja', (req, res) => {
                     printer
                         .text('')
                         .align('ct')
-                        .text(limpiarTexto('Paga con YAPE:'))
-                        // Al quitar el "0" forzamos a que use la configuración automática que Epson sí entiende
-                        // o pasamos 1 como versión inicial si queremos tamaño específico
-                        .qrcode(config.qr_yape_contenido.trim(), 1, 'M', 6)
-                        .text('')
-                        .text('================================================')
-                        .text(limpiarTexto(config.mensaje_ticket || '¡Gracias por su preferencia!'))
-                        .text('================================================')
-                        .feed(3).cut().close();
-                    res.json({ success: true, message: 'Pre-cuenta impresa con QR Yape' });
+                        .text(limpiarTexto('Paga con YAPE:'));
+
+                    // El comando nativo .qrcode() de esta libreria usa una secuencia
+                    // GS Z / ESC Z no estandar que las impresoras Epson no reconocen,
+                    // por eso solo imprimian el texto plano del contenido del QR.
+                    // .qrimage() genera el QR como bitmap real y lo manda como imagen
+                    // rasterizada (comando GS v 0), que si es compatible con Epson.
+                    printer.qrimage(config.qr_yape_contenido.trim(), { type: 'png', mode: 'dhdw', size: 4 }, function (err) {
+                        if (err) console.error('Error generando imagen QR:', err);
+
+                        printer
+                            .align('ct')
+                            .text('')
+                            .text('================================================')
+                            .text(limpiarTexto('ESTE DOCUMENTO NO ES'))
+                            .text(limpiarTexto('UN COMPROBANTE DE PAGO'))
+                            .text('================================================')
+                            .feed(3).cut().close();
+                        res.json({ success: true, message: 'Pre-cuenta impresa con QR Yape' });
+                    });
                 } else {
                     printer
                         .text(limpiarTexto('ESTE DOCUMENTO NO ES'))
@@ -312,7 +323,7 @@ app.post('/api/imprimir/reporte-cierre', (req, res) => {
             const retiroDueno    = parseFloat(cierre.monto_retirado_dueno  || 0);
             const turno          = String(cierre.turno || 'N/A').toUpperCase();
             const cajero         = cierre.usuario_nombre || cierre.cajero_nombre || 'Usuario';
-            const fecha          = new Date().toLocaleString('es-PE');
+            const fecha          = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
 
             // ── Encabezado ────────────────────────────────────────────
             imprimirCabecera(printer);
@@ -395,7 +406,7 @@ app.post('/api/imprimir/reimpresion', (req, res) => {
             const identificador = venta.mesa_id
                 ? `Mesa: ${venta.mesa_numero}`
                 : `CLIENTE: ${venta.nombre_cliente || 'Para Llevar'}`;
-            const fecha = new Date(venta.created_at).toLocaleString('es-PE', { hour12: false });
+            const fecha = new Date(venta.created_at).toLocaleString('es-PE', { hour12: false, timeZone: 'America/Lima' });
 
             imprimirCabecera(printer);
             printer
