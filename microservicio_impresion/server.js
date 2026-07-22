@@ -71,9 +71,19 @@ const alinear = (izq, der, ancho = 48) => {
 };
 
 const conectarImpresora = () => {
-    const device = new escpos.USB();
-    const printer = new escpos.Printer(device);
-    return { device, printer };
+    try {
+        const devices = escpos.USB.findPrinter();
+        if (!devices || devices.length === 0) {
+            return null;
+        }
+
+        const device = new escpos.USB();
+        const printer = new escpos.Printer(device);
+        return { device, printer };
+    } catch (e) {
+        console.warn('No se pudo inicializar el adaptador USB de la impresora:', e && e.message ? e.message : e);
+        return null;
+    }
 };
 
 const esPagoYape = (metodo_pago, metodo_digital) => {
@@ -125,7 +135,9 @@ app.post('/api/imprimir/cocina', (req, res) => {
         : `COCINA - Mesa ${orden.mesa_numero}`;
 
     try {
-        const { device, printer } = conectarImpresora();
+        const impresora = conectarImpresora();
+        if (!impresora) return res.status(503).json({ error: 'No se detectó impresora USB' });
+        const { device, printer } = impresora;
 
         device.open(function (error) {
             if (error) return res.status(500).json({ error: 'Impresora apagada o desconectada' });
@@ -174,7 +186,9 @@ app.post('/api/imprimir/caja', (req, res) => {
     }
 
     try {
-        const { device, printer } = conectarImpresora();
+        const impresora = conectarImpresora();
+        if (!impresora) return res.status(503).json({ error: 'No se detectó impresora USB' });
+        const { device, printer } = impresora;
 
         device.open(function (error) {
             if (error) return res.status(500).json({ error: 'Impresora desconectada' });
@@ -304,7 +318,9 @@ app.post('/api/imprimir/reporte-cierre', (req, res) => {
     }
 
     try {
-        const { device, printer } = conectarImpresora();
+        const impresora = conectarImpresora();
+        if (!impresora) return res.status(503).json({ error: 'No se detectó impresora USB' });
+        const { device, printer } = impresora;
 
         device.open(function (error) {
             if (error) return res.status(500).json({ error: 'Impresora desconectada' });
@@ -394,7 +410,9 @@ app.post('/api/imprimir/reimpresion', (req, res) => {
     }
 
     try {
-        const { device, printer } = conectarImpresora();
+        const impresora = conectarImpresora();
+        if (!impresora) return res.status(503).json({ error: 'No se detectó impresora USB' });
+        const { device, printer } = impresora;
 
         device.open(function (error) {
             if (error) return res.status(500).json({ error: 'Impresora desconectada' });
