@@ -15,7 +15,7 @@ module.exports = {
             cwd: "./frontend_3",
             env: {
                 NODE_ENV: "production",
-                PORT: 5174
+                PORT: 5173
             }
         },
         {
